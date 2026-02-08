@@ -1,3 +1,7 @@
+# Indian Equity Market Analyzer Pro - No Build Dependencies
+# Works on ALL Python versions (3.8-3.13)
+# ========================================================
+
 # Core Framework
 streamlit==1.33.0
 
@@ -5,11 +9,10 @@ streamlit==1.33.0
 pandas==2.2.0
 numpy==1.26.4
 
-# Market Data
+# Market Data - Using yfinance WITHOUT lxml dependency
 yfinance==0.2.37
 requests==2.31.0
 multitasking==0.0.11
-lxml==4.9.3
 
 # Technical Analysis
 ta==0.10.2
@@ -22,3 +25,4 @@ scipy==1.12.0
 
 # Utilities
 python-dateutil==2.8.2
+pytz==2024.1
