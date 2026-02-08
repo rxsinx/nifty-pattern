@@ -70,6 +70,7 @@ class IndianEquityAnalyzer:
         self.period = period
         self.data = None
         self.ticker = None
+        self.pattern_detector = None
         
     def fetch_data(self):
         """Fetch data from Yahoo Finance for Indian stocks"""
@@ -91,6 +92,8 @@ class IndianEquityAnalyzer:
             
             if not self.data.empty:
                 self.calculate_indicators()
+                # Initialize pattern detector
+                self.pattern_detector = PatternDetector(self.data)
                 return True
             return False
         except Exception as e:
@@ -141,8 +144,19 @@ class IndianEquityAnalyzer:
         self.data = df
     
     def detect_volume_profile(self):
-        """Detect volume profile patterns as shown in Image 1"""
+        """Detect volume profile patterns"""
         df = self.data.tail(100)
+        
+        if len(df) < 20:
+            return {
+                'poc_price': 0,
+                'value_area_high': 0,
+                'value_area_low': 0,
+                'high_volume_nodes': [],
+                'low_volume_nodes': [],
+                'volume_distribution': np.array([]),
+                'price_bins': np.array([])
+            }
         
         # Calculate price levels and volume distribution
         price_range = df['High'].max() - df['Low'].min()
@@ -155,6 +169,17 @@ class IndianEquityAnalyzer:
             volume_at_price.append(df[mask]['Volume'].sum())
         
         volume_at_price = np.array(volume_at_price)
+        
+        if len(volume_at_price) == 0 or volume_at_price.sum() == 0:
+            return {
+                'poc_price': df['Close'].iloc[-1],
+                'value_area_high': df['High'].max(),
+                'value_area_low': df['Low'].min(),
+                'high_volume_nodes': [],
+                'low_volume_nodes': [],
+                'volume_distribution': volume_at_price,
+                'price_bins': bins
+            }
         
         # Find Point of Control (POC) - highest volume price level
         poc_idx = np.argmax(volume_at_price)
@@ -174,12 +199,16 @@ class IndianEquityAnalyzer:
             if cumulative_volume >= target_volume:
                 break
         
-        value_area_high = bins[max(value_area_indices) + 1]
-        value_area_low = bins[min(value_area_indices)]
+        if value_area_indices:
+            value_area_high = bins[max(value_area_indices) + 1]
+            value_area_low = bins[min(value_area_indices)]
+        else:
+            value_area_high = df['High'].max()
+            value_area_low = df['Low'].min()
         
         # Identify high and low volume nodes
-        threshold_high = np.percentile(volume_at_price, 80)
-        threshold_low = np.percentile(volume_at_price, 20)
+        threshold_high = np.percentile(volume_at_price[volume_at_price > 0], 80) if np.any(volume_at_price > 0) else 0
+        threshold_low = np.percentile(volume_at_price[volume_at_price > 0], 20) if np.any(volume_at_price > 0) else 0
         
         high_volume_nodes = bins[:-1][volume_at_price > threshold_high]
         low_volume_nodes = bins[:-1][volume_at_price < threshold_low]
@@ -195,255 +224,28 @@ class IndianEquityAnalyzer:
         }
     
     def detect_chart_patterns(self):
-        """Detect Dan Zanger's Chart Patterns from Image 2"""
-        df = self.data.tail(100).copy()
-        patterns = []
+        """Detect Dan Zanger's Chart Patterns using PatternDetector"""
+        if not self.pattern_detector:
+            return []
         
-        # 1. Cup and Handle Pattern
-        if self.detect_cup_and_handle(df):
-            patterns.append({
-                'pattern': 'Cup and Handle',
-                'signal': 'BULLISH',
-                'description': 'Signature pattern - Most powerful in bull markets',
-                'action': 'Consider LONG position on breakout with volume'
-            })
-        
-        # 2. High Tight Flag
-        if self.detect_high_tight_flag(df):
-            patterns.append({
-                'pattern': 'High Tight Flag',
-                'signal': 'BULLISH',
-                'description': 'Rare and explosive pattern',
-                'action': 'Enter on breakout with massive volume confirmation'
-            })
-        
-        # 3. Ascending Triangle
-        if self.detect_ascending_triangle(df):
-            patterns.append({
-                'pattern': 'Ascending Triangle',
-                'signal': 'BULLISH',
-                'description': 'Shows buyers getting aggressive',
-                'action': 'Breakout needs massive volume for confirmation'
-            })
-        
-        # 4. Flat Base
-        if self.detect_flat_base(df):
-            patterns.append({
-                'pattern': 'Flat Base',
-                'signal': 'BULLISH',
-                'description': 'Consolidation pattern indicating accumulation',
-                'action': 'Volume-fueled breakout required'
-            })
-        
-        # 5. Falling Wedge
-        if self.detect_falling_wedge(df):
-            patterns.append({
-                'pattern': 'Falling Wedge',
-                'signal': 'BULLISH',
-                'description': 'Reversal pattern with converging trendlines',
-                'action': 'Wait for upside breakout'
-            })
-        
-        return patterns
+        try:
+            patterns = self.pattern_detector.detect_all_zanger_patterns()
+            return patterns
+        except Exception as e:
+            st.warning(f"Pattern detection error: {e}")
+            return []
     
     def detect_swing_patterns(self):
-        """Detect Qullamaggie's Swing School Patterns from Image 3"""
-        df = self.data.tail(100).copy()
-        patterns = []
+        """Detect Qullamaggie's Swing Patterns using PatternDetector"""
+        if not self.pattern_detector:
+            return []
         
-        # 1. Breakout (High Tight Flag)
-        if self.check_breakout_pattern(df):
-            patterns.append({
-                'pattern': 'Breakout (High Tight Flag)',
-                'signal': 'BULLISH',
-                'description': 'Stair-step pattern with VDU (Volume Dry Up)',
-                'action': 'Buyers stepping in early = tightening, VDU = Selling exhausted'
-            })
-        
-        # 2. Episodic Pivot (EP)
-        if self.check_episodic_pivot(df):
-            patterns.append({
-                'pattern': 'Episodic Pivot (EP)',
-                'signal': 'BULLISH',
-                'description': 'ORH Entry with huge volume in first mins',
-                'action': 'Must hold above ORH, Gap and Go price action'
-            })
-        
-        # 3. Parabolic Short
-        if self.check_parabolic_short(df):
-            patterns.append({
-                'pattern': 'Parabolic Short',
-                'signal': 'BEARISH',
-                'description': 'Vertical move extended from 10/20 EMA',
-                'action': 'Wait for first crack, target 10/20 EMA reversion'
-            })
-        
-        return patterns
-    
-    def detect_cup_and_handle(self, df):
-        """Detect Cup and Handle pattern"""
-        if len(df) < 50:
-            return False
-        
-        # Look for U-shape followed by consolidation
-        prices = df['Close'].values
-        
-        # Find potential cup (U-shape)
-        mid_point = len(prices) // 2
-        left_half = prices[:mid_point]
-        right_half = prices[mid_point:]
-        
-        # Cup should have declining left side and rising right side
-        if len(left_half) > 10 and len(right_half) > 10:
-            left_trend = np.polyfit(range(len(left_half)), left_half, 1)[0]
-            right_trend = np.polyfit(range(len(right_half)), right_half, 1)[0]
-            
-            # Check for volume dry up in handle
-            recent_volume = df['Volume'].tail(10).mean()
-            avg_volume = df['Volume'].mean()
-            
-            if left_trend < 0 and right_trend > 0 and recent_volume < avg_volume * 0.7:
-                return True
-        
-        return False
-    
-    def detect_high_tight_flag(self, df):
-        """Detect High Tight Flag pattern"""
-        if len(df) < 30:
-            return False
-        
-        # Check for strong uptrend followed by tight consolidation
-        recent_30 = df.tail(30)
-        
-        # Strong uptrend (pole)
-        pole_data = recent_30.head(15)
-        pole_gain = (pole_data['Close'].iloc[-1] - pole_data['Close'].iloc[0]) / pole_data['Close'].iloc[0]
-        
-        # Tight flag
-        flag_data = recent_30.tail(15)
-        flag_range = (flag_data['High'].max() - flag_data['Low'].min()) / flag_data['Close'].mean()
-        
-        if pole_gain > 0.20 and flag_range < 0.15:  # 20% gain in pole, <15% range in flag
-            return True
-        
-        return False
-    
-    def detect_ascending_triangle(self, df):
-        """Detect Ascending Triangle pattern"""
-        if len(df) < 30:
-            return False
-        
-        recent = df.tail(30)
-        
-        # Check for flat resistance (horizontal top)
-        recent_highs = recent['High'].tail(10)
-        high_variance = recent_highs.std() / recent_highs.mean()
-        
-        # Check for rising support
-        lows = recent['Low'].values
-        low_trend = np.polyfit(range(len(lows)), lows, 1)[0]
-        
-        if high_variance < 0.02 and low_trend > 0:  # Flat top, rising bottom
-            return True
-        
-        return False
-    
-    def detect_flat_base(self, df):
-        """Detect Flat Base consolidation"""
-        if len(df) < 20:
-            return False
-        
-        recent = df.tail(20)
-        
-        # Check for tight range consolidation
-        price_range = (recent['High'].max() - recent['Low'].min()) / recent['Close'].mean()
-        
-        if price_range < 0.10:  # Less than 10% range
-            return True
-        
-        return False
-    
-    def detect_falling_wedge(self, df):
-        """Detect Falling Wedge pattern"""
-        if len(df) < 30:
-            return False
-        
-        recent = df.tail(30)
-        
-        # Both highs and lows should be declining but converging
-        highs = recent['High'].values
-        lows = recent['Low'].values
-        
-        high_trend = np.polyfit(range(len(highs)), highs, 1)[0]
-        low_trend = np.polyfit(range(len(lows)), lows, 1)[0]
-        
-        # Range should be narrowing
-        early_range = recent.head(10)['High'].max() - recent.head(10)['Low'].min()
-        late_range = recent.tail(10)['High'].max() - recent.tail(10)['Low'].min()
-        
-        if high_trend < 0 and low_trend < 0 and late_range < early_range * 0.7:
-            return True
-        
-        return False
-    
-    def check_breakout_pattern(self, df):
-        """Check for Qullamaggie breakout pattern"""
-        if len(df) < 20:
-            return False
-        
-        recent = df.tail(20)
-        
-        # Check for higher lows (stair-step)
-        lows = recent['Low'].values
-        higher_lows = all(lows[i] >= lows[i-1] * 0.98 for i in range(1, len(lows)))
-        
-        # Volume dry up
-        recent_vol = recent['Volume'].tail(5).mean()
-        avg_vol = recent['Volume'].mean()
-        
-        if higher_lows and recent_vol < avg_vol * 0.6:
-            return True
-        
-        return False
-    
-    def check_episodic_pivot(self, df):
-        """Check for Episodic Pivot pattern"""
-        if len(df) < 10:
-            return False
-        
-        recent = df.tail(10)
-        
-        # Look for gap up with huge volume
-        for i in range(1, len(recent)):
-            gap = (recent['Low'].iloc[i] - recent['High'].iloc[i-1]) / recent['High'].iloc[i-1]
-            vol_spike = recent['Volume'].iloc[i] / recent['Volume'].iloc[:i].mean()
-            
-            if gap > 0.02 and vol_spike > 3:  # 2% gap with 3x volume
-                return True
-        
-        return False
-    
-    def check_parabolic_short(self, df):
-        """Check for Parabolic Short setup"""
-        if len(df) < 20:
-            return False
-        
-        recent = df.tail(20)
-        
-        # Calculate distance from 10/20 EMA
-        if 'EMA_10' in recent.columns and 'EMA_20' in recent.columns:
-            current_price = recent['Close'].iloc[-1]
-            ema_10 = recent['EMA_10'].iloc[-1]
-            ema_20 = recent['EMA_20'].iloc[-1]
-            
-            # Check for vertical move (>15% above EMA)
-            deviation_10 = (current_price - ema_10) / ema_10
-            deviation_20 = (current_price - ema_20) / ema_20
-            
-            if deviation_10 > 0.15 or deviation_20 > 0.20:
-                return True
-        
-        return False
+        try:
+            patterns = self.pattern_detector.detect_all_swing_patterns()
+            return patterns
+        except Exception as e:
+            st.warning(f"Swing pattern detection error: {e}")
+            return []
     
     def get_trading_signal(self):
         """Generate comprehensive trading signal"""
@@ -641,14 +443,21 @@ def create_candlestick_chart(analyzer):
     return fig
 
 def create_volume_profile_chart(analyzer):
-    """Create volume profile chart based on Image 1"""
+    """Create volume profile chart"""
     vp = analyzer.detect_volume_profile()
     
     fig = go.Figure()
     
+    if len(vp['volume_distribution']) == 0:
+        fig.add_annotation(text="Insufficient data for volume profile", 
+                          xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False)
+        return fig
+    
     # Horizontal volume bars
+    price_levels = (vp['price_bins'][:-1] + vp['price_bins'][1:]) / 2
+    
     fig.add_trace(go.Bar(
-        y=(vp['price_bins'][:-1] + vp['price_bins'][1:]) / 2,
+        y=price_levels,
         x=vp['volume_distribution'],
         orientation='h',
         name='Volume at Price',
@@ -825,6 +634,14 @@ def main():
                             with st.expander(f"🔹 {pattern['pattern']} - {pattern['signal']}", expanded=True):
                                 st.markdown(f"**Description:** {pattern['description']}")
                                 st.markdown(f"**Action:** {pattern['action']}")
+                                
+                                # Display additional pattern details if available
+                                if 'entry_point' in pattern:
+                                    st.markdown(f"**Entry:** {pattern['entry_point']}")
+                                if 'stop_loss' in pattern:
+                                    st.markdown(f"**Stop Loss:** {pattern['stop_loss']}")
+                                if 'target_1' in pattern:
+                                    st.markdown(f"**Target 1:** {pattern['target_1']}")
                     else:
                         st.info("No Dan Zanger patterns detected in current timeframe")
                 
@@ -835,6 +652,14 @@ def main():
                             with st.expander(f"🔹 {pattern['pattern']} - {pattern['signal']}", expanded=True):
                                 st.markdown(f"**Description:** {pattern['description']}")
                                 st.markdown(f"**Action:** {pattern['action']}")
+                                
+                                # Display additional pattern details if available
+                                if 'entry_point' in pattern:
+                                    st.markdown(f"**Entry:** {pattern['entry_point']}")
+                                if 'stop_loss' in pattern:
+                                    st.markdown(f"**Stop Loss:** {pattern['stop_loss']}")
+                                if 'target_1' in pattern:
+                                    st.markdown(f"**Target 1:** {pattern['target_1']}")
                     else:
                         st.info("No Qullamaggie swing patterns detected in current timeframe")
                 
