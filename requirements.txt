@@ -1,16 +1,18 @@
-# Pattern Detector Streamlit App - Requirements
-# ===============================================
+# Core Framework
+streamlit==1.33.0
 
-# Core Dependencies
-streamlit==1.28.0
+# Data Analysis
 pandas==2.2.0
 numpy==1.26.4
 
-# Data Fetching
+# Market Data
 yfinance==0.2.37
+requests==2.31.0
+multitasking==0.0.11
+lxml==4.9.3
 
 # Technical Analysis
-ta==0.11.0
+ta==0.10.2
 
 # Visualization
 plotly==5.18.0
@@ -20,7 +22,3 @@ scipy==1.12.0
 
 # Utilities
 python-dateutil==2.8.2
-
-# Optional but Recommended
-openpyxl==3.1.2  # For Excel export
-
