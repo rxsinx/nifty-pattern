@@ -33,10 +33,49 @@ class PatternDetector:
                   and technical indicators
         """
         self.data = data
+
+        # Calculate EMAs if not present
+        if 'EMA_8' not in self.data.columns:
+            self.data['EMA_8'] = self.data['Close'].ewm(span=8, adjust=False).mean()
+        if 'EMA_21' not in self.data.columns:
+            self.data['EMA_21'] = self.data['Close'].ewm(span=21, adjust=False).mean()
         
     # ============================================================================
     # DAN ZANGER PATTERNS
     # ============================================================================
+    # FIX: Add volume profile helper methods
+    def analyze_volume_profile(self, df: pd.DataFrame) -> Dict:
+        """
+        Analyze volume distribution for pattern confirmation.
+        """
+        if len(df) < 20:
+            return {}
+        
+        # Calculate volume at price levels
+        price_bins = np.linspace(df['Low'].min(), df['High'].max(), 20)
+        volume_by_price = []
+        
+        for i in range(len(price_bins)-1):
+            mask = (df['Close'] >= price_bins[i]) & (df['Close'] < price_bins[i+1])
+            volume_by_price.append(df[mask]['Volume'].sum() if mask.any() else 0)
+        
+        volume_by_price = np.array(volume_by_price)
+        
+        # Find POC (Point of Control)
+        if len(volume_by_price) > 0:
+            poc_idx = np.argmax(volume_by_price)
+            poc_price = (price_bins[poc_idx] + price_bins[poc_idx+1]) / 2
+        else:
+            poc_price = df['Close'].mean()
+        
+        return {
+            'poc_price': poc_price,
+            'high_volume_nodes': price_bins[volume_by_price > np.percentile(volume_by_price, 70)] 
+                                 if len(volume_by_price) > 0 else [],
+            'volume_distribution': volume_by_price
+        }
+
+
     
     def detect_cup_and_handle(self, lookback: int = 100) -> Dict:
         """
@@ -56,7 +95,7 @@ class PatternDetector:
         """
         df = self.data.tail(lookback).copy()
         if len(df) < 60:
-            return {'detected': False, 'score': 0}
+            return {'detected': False, 'score': 0, 'reason': 'Insufficient data'}
         
         score = 0
         prices = df['Close'].values
@@ -823,6 +862,19 @@ class PatternDetector:
     # ============================================================================
     # MAIN DETECTION METHODS
     # ============================================================================
+    def validate_and_detect(self, detector_method, *args, **kwargs):
+        """
+        Safely execute pattern detection and return consistent format.
+        """
+        try:
+            result = detector_method(*args, **kwargs)
+            if result.get('detected', False):
+                return result
+            return None
+        except Exception as e:
+            print(f"Error in {detector_method.__name__}: {e}")
+            return None
+
     
     def detect_all_zanger_patterns(self) -> List[Dict]:
         """
