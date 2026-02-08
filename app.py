@@ -12,6 +12,8 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import OnBalanceVolumeIndicator
 import warnings
 from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 warnings.filterwarnings('ignore')
 
