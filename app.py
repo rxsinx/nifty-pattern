@@ -15,6 +15,8 @@ from functools import lru_cache
 import io
 from scipy import stats
 
+from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
+
 warnings.filterwarnings('ignore')
 
 # Page configuration
