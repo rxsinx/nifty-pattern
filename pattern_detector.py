@@ -1446,6 +1446,244 @@ class PatternDetector:
     # WYCKOFF PATTERNS
     # ============================================================================
     
+    def detect_vcp(self, lookback: int = 80) -> Dict:
+        """
+        Detect VCP (Volatility Contraction Pattern) - Mark Minervini's signature pattern.
+        
+        Pattern Characteristics:
+        - Series of contracting price consolidations (3-4 pullbacks minimum)
+        - Each pullback shallower than the previous (declining volatility)
+        - Volume dries up during contractions
+        - Tight consolidation near highs before breakout
+        - Also called "Pocket Pivot" or "Constructive Tightness"
+        
+        VCP Structure:
+        - Base 1: 10-20% pullback
+        - Base 2: 5-15% pullback (smaller than Base 1)
+        - Base 3: 3-10% pullback (smaller than Base 2)
+        - Base 4: 1-5% pullback (tightest)
+        - Breakout: Volume expansion
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 60:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        volumes = df['Volume'].values
+        
+        # Find local peaks (highs) to measure pullbacks
+        peaks = []
+        troughs = []
+        
+        for i in range(5, len(prices) - 5):
+            if prices[i] == max(prices[i-5:i+6]):
+                peaks.append((i, prices[i]))
+            if prices[i] == min(prices[i-5:i+6]):
+                troughs.append((i, prices[i]))
+        
+        # Need at least 3 peaks and 3 troughs for VCP
+        if len(peaks) >= 3 and len(troughs) >= 3:
+            # Analyze last 4 pullbacks
+            recent_peaks = peaks[-4:] if len(peaks) >= 4 else peaks
+            recent_troughs = troughs[-4:] if len(troughs) >= 4 else troughs
+            
+            # Calculate pullback percentages
+            pullbacks = []
+            for i in range(len(recent_peaks) - 1):
+                if i < len(recent_troughs):
+                    peak_price = recent_peaks[i][1]
+                    trough_price = recent_troughs[i][1]
+                    pullback_pct = (peak_price - trough_price) / peak_price
+                    pullbacks.append(pullback_pct)
+            
+            # Check for contracting volatility (each pullback smaller)
+            if len(pullbacks) >= 3:
+                contracting = True
+                for i in range(len(pullbacks) - 1):
+                    if pullbacks[i+1] >= pullbacks[i]:
+                        contracting = False
+                        break
+                
+                if contracting:
+                    score += 0.4
+                    
+                    # Verify pullback percentages are in VCP range
+                    if pullbacks[0] > 0.08 and pullbacks[-1] < 0.05:  # First >8%, Last <5%
+                        score += 0.2
+        
+        # Check volume contraction during latest base
+        last_30 = df.tail(30)
+        earlier_30 = df.iloc[-60:-30] if len(df) >= 60 else df.iloc[:-30]
+        
+        if len(earlier_30) > 0:
+            if last_30['Volume'].mean() < earlier_30['Volume'].mean() * 0.7:
+                score += 0.2
+        
+        # Tightness check - last 10 days should be very tight
+        last_10 = df.tail(10)
+        tight_range = (last_10['High'].max() - last_10['Low'].min()) / last_10['Close'].mean()
+        
+        if tight_range < 0.05:  # Very tight (<5%)
+            score += 0.2
+        
+        # Price near highs
+        current_price = prices[-1]
+        recent_high = df['High'].tail(60).max()
+        
+        if current_price > recent_high * 0.95:
+            score += 0.1
+        
+        if score > 0.7:
+            pivot_point = df['High'].tail(20).max()
+            tight_low = last_10['Low'].min()
+            base_low = df['Low'].tail(40).min()
+            
+            # Calculate VCP contraction data for display
+            contraction_data = {
+                'pullbacks': pullbacks if len(pullbacks) >= 3 else [],
+                'bases_count': len(pullbacks)
+            }
+            
+            return {
+                'detected': True,
+                'pattern': 'VCP (Volatility Contraction Pattern)',
+                'signal': 'BULLISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': "Mark Minervini's VCP. Contracting volatility + tightening action.",
+                'entry_point': f"₹{pivot_point * 1.01:.2f} (Breakout above pivot)",
+                'stop_loss': f"₹{base_low * 0.98:.2f} (Below base low)",
+                'target_1': f"₹{current_price * 1.30:.2f} (30% gain - Stage 2 target)",
+                'target_2': f"₹{current_price * 1.50:.2f} (50% gain - extended target)",
+                'action': 'BUY on tight breakout with volume surge (2x average)',
+                'contraction_data': contraction_data,  # For chart visualization
+                'rules': [
+                    f'VCP Bases Detected: {len(pullbacks)}',
+                    f'Base 1: {pullbacks[0]*100:.1f}% pullback' if len(pullbacks) > 0 else '',
+                    f'Base 2: {pullbacks[1]*100:.1f}% pullback (smaller)' if len(pullbacks) > 1 else '',
+                    f'Base 3: {pullbacks[2]*100:.1f}% pullback (tighter)' if len(pullbacks) > 2 else '',
+                    f'Base 4: {pullbacks[3]*100:.1f}% pullback (tightest)' if len(pullbacks) > 3 else '',
+                    'Volume dry-up confirmed',
+                    f'Entry: Above ₹{pivot_point:.2f} with 2x volume',
+                    'Minervini\'s SEPA criteria: Stage 2 uptrend'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_darvas_box(self, lookback: int = 50) -> Dict:
+        """
+        Detect Darvas Box Pattern - Nicolas Darvas's box theory.
+        
+        Pattern Characteristics:
+        - Price makes new high, then consolidates
+        - Top of box = highest high in consolidation
+        - Bottom of box = lowest low in consolidation
+        - Box must hold for at least 3-5 periods
+        - Breakout above box on volume = BUY signal
+        - Stop loss just below box bottom
+        
+        Box Rules:
+        - New high must not be violated for 3+ days (ceiling)
+        - New low must not be violated for 3+ days (floor)
+        - Price oscillates between ceiling and floor
+        - Volume contracts during box formation
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 20:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        
+        # Find the most recent significant high
+        highs = df['High'].values
+        lows = df['Low'].values
+        
+        # Look for a consolidation box in last 20 periods
+        box_period = 20
+        recent_data = df.tail(box_period)
+        
+        # Find box boundaries
+        box_top = recent_data['High'].max()
+        box_bottom = recent_data['Low'].min()
+        box_range = (box_top - box_bottom) / recent_data['Close'].mean()
+        
+        # Box should be relatively tight (5-15% range)
+        if 0.05 <= box_range <= 0.20:
+            score += 0.3
+        
+        # Check if box top was established early and held
+        box_top_idx = recent_data['High'].idxmax()
+        periods_since_top = len(recent_data) - recent_data.index.get_loc(box_top_idx)
+        
+        if periods_since_top >= 3:  # Top held for 3+ periods
+            score += 0.2
+            
+            # Verify no new highs after box top
+            after_top = recent_data.loc[box_top_idx:]
+            if len(after_top) > 1:
+                if after_top['High'].iloc[1:].max() < box_top * 1.001:  # No breakout yet
+                    score += 0.1
+        
+        # Check if box bottom was established and held
+        box_bottom_idx = recent_data['Low'].idxmin()
+        periods_since_bottom = len(recent_data) - recent_data.index.get_loc(box_bottom_idx)
+        
+        if periods_since_bottom >= 3:  # Bottom held for 3+ periods
+            score += 0.2
+        
+        # Volume contraction during box
+        box_volume = recent_data['Volume'].mean()
+        earlier_volume = df.iloc[-40:-20]['Volume'].mean() if len(df) >= 40 else box_volume
+        
+        if box_volume < earlier_volume * 0.8:
+            score += 0.1
+        
+        # Current price position
+        current_price = df['Close'].iloc[-1]
+        
+        # Bonus: Price near top of box (ready for breakout)
+        if current_price > box_top * 0.97:
+            score += 0.1
+        
+        if score > 0.7:
+            # Calculate box data for visualization
+            box_data = {
+                'top': box_top,
+                'bottom': box_bottom,
+                'start_date': recent_data.index[0],
+                'end_date': recent_data.index[-1],
+                'periods_held': periods_since_top
+            }
+            
+            return {
+                'detected': True,
+                'pattern': 'Darvas Box',
+                'signal': 'BULLISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': "Nicolas Darvas's box theory. Price confined between ceiling and floor.",
+                'entry_point': f"₹{box_top * 1.01:.2f} (Breakout above box top)",
+                'stop_loss': f"₹{box_bottom * 0.99:.2f} (Just below box bottom)",
+                'target_1': f"₹{box_top + (box_top - box_bottom):.2f} (Box height projected)",
+                'target_2': f"₹{box_top + (box_top - box_bottom) * 2:.2f} (2x box height)",
+                'action': 'BUY on breakout above box with strong volume',
+                'box_data': box_data,  # For chart visualization
+                'rules': [
+                    f'Box Top (Ceiling): ₹{box_top:.2f}',
+                    f'Box Bottom (Floor): ₹{box_bottom:.2f}',
+                    f'Box Range: {box_range*100:.1f}%',
+                    f'Box held for {periods_since_top} periods',
+                    f'Entry: Above ₹{box_top:.2f} with volume',
+                    f'Stop: Below ₹{box_bottom:.2f}',
+                    'Darvas: Buy new highs in strong stocks',
+                    'Never average down, only pyramid up'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
     def detect_wyckoff_accumulation(self, lookback: int = 60) -> Dict:
         """
         Detect Wyckoff Accumulation Pattern - Smart Money buying.
@@ -1832,15 +2070,17 @@ class PatternDetector:
     
     def detect_all_wyckoff_canslim_patterns(self) -> List[Dict]:
         """
-        Detect Wyckoff and CANSLIM patterns.
+        Detect Wyckoff, CANSLIM, VCP, and Darvas Box patterns.
         
         Returns:
             List of detected patterns with full details
         """
         patterns = []
         
-        # Run Wyckoff and CANSLIM detections
+        # Run all advanced pattern detections
         detectors = [
+            self.detect_vcp,
+            self.detect_darvas_box,
             self.detect_wyckoff_accumulation,
             self.detect_wyckoff_distribution,
             self.detect_canslim_setup
@@ -1958,8 +2198,8 @@ if __name__ == "__main__":
     print("Pattern Detector Module - Ready for import")
     print("Available classes: PatternDetector")
     print("Available functions: format_pattern_summary, get_pattern_statistics")
-    print("\nTotal Patterns: 22")
+    print("\nTotal Patterns: 24")
     print("- Zanger: 6")
     print("- Classic: 8 (including bearish with SHORT signals)")
     print("- Swing: 5")
-    print("- Wyckoff & CANSLIM: 3")
+    print("- Advanced: 5 (VCP, Darvas, Wyckoff, CANSLIM)")
