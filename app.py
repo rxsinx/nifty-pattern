@@ -110,7 +110,6 @@ class IndianEquityAnalyzer:
         df['SMA_200'] = SMAIndicator(df['Close'], window=200).sma_indicator()
         df['EMA_10'] = EMAIndicator(df['Close'], window=10).ema_indicator()
         df['EMA_20'] = EMAIndicator(df['Close'], window=20).ema_indicator()
-        df['EMA_70'] = EMAIndicator(df['Close'], window=70).ema_indicator()
         
         # MACD
         macd = MACD(df['Close'])
@@ -417,6 +416,60 @@ def draw_patterns_on_chart(fig, patterns, df):
         else:
             color = '#ffa500'  # Orange
         
+        # Special handling for Darvas Box - draw the box
+        if 'Darvas Box' in pattern_name and 'box_data' in pattern:
+            box_data = pattern['box_data']
+            box_top = box_data['top']
+            box_bottom = box_data['bottom']
+            box_start = box_data['start_date']
+            box_end = box_data['end_date']
+            
+            # Draw box rectangle
+            fig.add_shape(
+                type="rect",
+                x0=box_start,
+                x1=box_end,
+                y0=box_bottom,
+                y1=box_top,
+                line=dict(color='#4169E1', width=3, dash='dash'),
+                fillcolor='rgba(65, 105, 225, 0.1)',
+                row=1, col=1
+            )
+            
+            # Label box top and bottom
+            fig.add_hline(
+                y=box_top,
+                line_dash="solid",
+                line_color='#4169E1',
+                line_width=2,
+                annotation_text=f"📦 Box Top: ₹{box_top:.2f}",
+                annotation_position="right",
+                row=1, col=1
+            )
+            
+            fig.add_hline(
+                y=box_bottom,
+                line_dash="solid",
+                line_color='#4169E1',
+                line_width=2,
+                annotation_text=f"📦 Box Bottom: ₹{box_bottom:.2f}",
+                annotation_position="right",
+                row=1, col=1
+            )
+            
+            # Add "DARVAS BOX" label
+            fig.add_annotation(
+                x=box_start + (box_end - box_start) / 2,
+                y=(box_top + box_bottom) / 2,
+                text="<b>DARVAS BOX</b>",
+                showarrow=False,
+                font=dict(color='#4169E1', size=14, family='Arial Black'),
+                bgcolor='rgba(255, 255, 255, 0.8)',
+                bordercolor='#4169E1',
+                borderwidth=2,
+                row=1, col=1
+            )
+        
         # Draw Entry Point
         if entry_price:
             fig.add_hline(
@@ -465,26 +518,27 @@ def draw_patterns_on_chart(fig, patterns, df):
                 row=1, col=1
             )
         
-        # Add pattern label annotation
-        fig.add_annotation(
-            x=last_date,
-            y=df['High'].max() * (1 - 0.05 * i),  # Stack annotations
-            text=f"<b>{pattern_name}</b>",
-            showarrow=True,
-            arrowhead=2,
-            arrowsize=1,
-            arrowwidth=2,
-            arrowcolor=color,
-            ax=-50,
-            ay=-30,
-            bgcolor=color,
-            font=dict(color='white', size=12),
-            bordercolor=color,
-            borderwidth=2,
-            borderpad=4,
-            opacity=0.9,
-            row=1, col=1
-        )
+        # Add pattern label annotation (skip for Darvas Box as it has custom label)
+        if 'Darvas Box' not in pattern_name:
+            fig.add_annotation(
+                x=last_date,
+                y=df['High'].max() * (1 - 0.05 * i),  # Stack annotations
+                text=f"<b>{pattern_name}</b>",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor=color,
+                ax=-50,
+                ay=-30,
+                bgcolor=color,
+                font=dict(color='white', size=12),
+                bordercolor=color,
+                borderwidth=2,
+                borderpad=4,
+                opacity=0.9,
+                row=1, col=1
+            )
     
     return fig
 
@@ -514,7 +568,7 @@ def create_candlestick_chart(analyzer, patterns=None):
     )
     
     # Moving Averages
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_70'], name='EMA 70', line=dict(color='black', width=1,dash='dash')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], name='SMA 20', line=dict(color='orange', width=1)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], name='SMA 50', line=dict(color='blue', width=1)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], name='SMA 200', line=dict(color='red', width=2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_10'], name='EMA 10', line=dict(color='green', width=1, dash='dash')), row=1, col=1)
@@ -628,7 +682,7 @@ def main():
         
         symbol = st.text_input(
             "Enter Stock Symbol (NSE)",
-            value="",
+            value="RELIANCE",
             help="Enter NSE symbol without .NS suffix (e.g., RELIANCE, TCS, INFY)"
         )
         
@@ -671,7 +725,9 @@ def main():
         - ✅ Gap and Go
         - ✅ ABCD Pattern
         
-        **Wyckoff & CANSLIM (3):**
+        **Advanced (5):**
+        - ✅ VCP 🔥 (Minervini)
+        - ✅ Darvas Box 📦
         - ✅ Wyckoff Accumulation 📊
         - ✅ Wyckoff Distribution 🔻
         - ✅ CANSLIM Setup 💎
@@ -679,6 +735,8 @@ def main():
         🔻 = **SHORT Signal**
         📊 = **Smart Money**
         💎 = **Growth Stock**
+        🔥 = **Stage 2 Uptrend**
+        📦 = **Box Breakout**
         """)
         
         st.markdown("---")
@@ -785,7 +843,7 @@ def main():
                 # Chart Patterns
                 st.markdown('<div class="sub-header">📈 Chart Pattern Detection</div>', unsafe_allow_html=True)
                 
-                tab1, tab2, tab3, tab4 = st.tabs(["Dan Zanger Patterns", "Qullamaggie Patterns", "Classic Patterns", "Wyckoff & CANSLIM"])
+                tab1, tab2, tab3, tab4 = st.tabs(["Dan Zanger Patterns", "Qullamaggie Patterns", "Classic Patterns", "Advanced Patterns"])
                 
                 with tab1:
                     if zanger_patterns:
@@ -914,14 +972,20 @@ def main():
                 
                 with tab4:
                     if wyckoff_canslim_patterns:
-                        st.success(f"✅ Found {len(wyckoff_canslim_patterns)} Wyckoff/CANSLIM pattern(s)")
+                        st.success(f"✅ Found {len(wyckoff_canslim_patterns)} Advanced pattern(s)")
                         
                         for pattern in wyckoff_canslim_patterns:
                             signal = pattern.get('signal', 'NEUTRAL')
                             pattern_name = pattern.get('pattern', 'Unknown')
                             
                             # Determine icon and styling
-                            if 'CANSLIM' in pattern_name:
+                            if 'VCP' in pattern_name:
+                                icon = "🔥"
+                                color = "orange"
+                            elif 'Darvas' in pattern_name:
+                                icon = "📦"
+                                color = "blue"
+                            elif 'CANSLIM' in pattern_name:
                                 icon = "💎"
                                 color = "blue"
                             elif 'Accumulation' in pattern_name:
@@ -937,6 +1001,35 @@ def main():
                             with st.expander(f"{icon} {pattern_name} - {signal}", expanded=True):
                                 st.markdown(f"**Description:** {pattern['description']}")
                                 st.markdown(f"**Action:** {pattern['action']}")
+                                
+                                # Special display for VCP
+                                if 'VCP' in pattern_name:
+                                    st.info("🔥 **VCP** = Mark Minervini's Volatility Contraction Pattern (SEPA)")
+                                    
+                                    if 'contraction_data' in pattern:
+                                        pullbacks = pattern['contraction_data'].get('pullbacks', [])
+                                        if pullbacks:
+                                            st.markdown("**Contraction Analysis:**")
+                                            for idx, pb in enumerate(pullbacks, 1):
+                                                st.markdown(f"- Base {idx}: **{pb*100:.1f}%** pullback")
+                                            
+                                            st.success("✅ Volatility contracting - tightening action confirmed!")
+                                
+                                # Special display for Darvas Box
+                                if 'Darvas' in pattern_name:
+                                    st.info("📦 **Darvas Box** = Nicolas Darvas's box theory (How I Made $2M in the Stock Market)")
+                                    
+                                    if 'box_data' in pattern:
+                                        box = pattern['box_data']
+                                        st.markdown(f"""
+                                        **Box Parameters:**
+                                        - 📦 **Box Top (Ceiling)**: ₹{box['top']:.2f}
+                                        - 📦 **Box Bottom (Floor)**: ₹{box['bottom']:.2f}
+                                        - 📦 **Box Range**: {((box['top'] - box['bottom']) / box['top'] * 100):.1f}%
+                                        - 📦 **Periods Held**: {box['periods_held']} days
+                                        """)
+                                        
+                                        st.success("✅ Box drawn on chart - look for breakout above ceiling!")
                                 
                                 # Special display for CANSLIM
                                 if 'CANSLIM' in pattern_name:
@@ -990,9 +1083,10 @@ def main():
                                 if pattern.get('rules'):
                                     with st.expander("📋 Trading Rules", expanded=False):
                                         for rule in pattern['rules']:
-                                            st.markdown(f"- {rule}")
+                                            if rule:  # Skip empty rules
+                                                st.markdown(f"- {rule}")
                     else:
-                        st.info("No Wyckoff or CANSLIM patterns detected in current timeframe")
+                        st.info("No Advanced patterns detected in current timeframe")
                 
                 # Charts
                 st.markdown('<div class="sub-header">📊 Technical Analysis Charts</div>', unsafe_allow_html=True)
