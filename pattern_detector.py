@@ -1443,6 +1443,311 @@ class PatternDetector:
         return {'detected': False, 'score': score}
     
     # ============================================================================
+    # WYCKOFF PATTERNS
+    # ============================================================================
+    
+    def detect_wyckoff_accumulation(self, lookback: int = 60) -> Dict:
+        """
+        Detect Wyckoff Accumulation Pattern - Smart Money buying.
+        
+        Pattern Phases:
+        - Phase A: Selling Climax (SC) + Automatic Rally (AR)
+        - Phase B: Building a Cause (trading range)
+        - Phase C: Spring (final shakeout) or Test
+        - Phase D: Sign of Strength (SOS) + Last Point of Support (LPS)
+        - Phase E: Markup (breakout)
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 50:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        volumes = df['Volume'].values
+        
+        # Phase A: Selling Climax detection
+        volume_spike_idx = np.argmax(volumes)
+        if volume_spike_idx < len(df) * 0.3:  # Early in period
+            volume_spike = volumes[volume_spike_idx]
+            avg_volume = np.mean(volumes)
+            
+            if volume_spike > avg_volume * 2.5:  # High volume selling
+                score += 0.2
+                
+                # Check for price drop before spike
+                if volume_spike_idx > 5:
+                    price_before = prices[volume_spike_idx - 5]
+                    price_at = prices[volume_spike_idx]
+                    if price_at < price_before * 0.95:
+                        score += 0.1
+        
+        # Phase B: Trading Range (consolidation)
+        middle_section = df.iloc[int(len(df) * 0.3):int(len(df) * 0.7)]
+        if len(middle_section) > 10:
+            range_pct = (middle_section['High'].max() - middle_section['Low'].min()) / middle_section['Close'].mean()
+            
+            if range_pct < 0.15:  # Tight range
+                score += 0.2
+            
+            # Volume should decline in Phase B
+            if middle_section['Volume'].mean() < df['Volume'].iloc[:int(len(df) * 0.3)].mean() * 0.7:
+                score += 0.1
+        
+        # Phase C: Spring or Test (lower low on lower volume)
+        recent_third = df.tail(int(len(df) * 0.3))
+        if len(recent_third) > 5:
+            recent_low = recent_third['Low'].min()
+            middle_low = middle_section['Low'].min() if len(middle_section) > 0 else recent_low
+            
+            if recent_low < middle_low * 0.99:  # Lower low
+                low_idx = recent_third['Low'].idxmin()
+                low_volume = df.loc[low_idx, 'Volume']
+                
+                if low_volume < df['Volume'].mean() * 0.8:  # Lower volume
+                    score += 0.2
+        
+        # Phase D: Sign of Strength
+        last_10 = df.tail(10)
+        if len(last_10) > 5:
+            # Higher highs on increasing volume
+            if last_10['Close'].iloc[-1] > last_10['Close'].iloc[0]:
+                if last_10['Volume'].tail(5).mean() > last_10['Volume'].head(5).mean():
+                    score += 0.2
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            range_low = df['Low'].tail(40).min()
+            range_high = df['High'].tail(40).max()
+            
+            return {
+                'detected': True,
+                'pattern': 'Wyckoff Accumulation',
+                'signal': 'BULLISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': 'Smart Money accumulation. Selling climax → Range → Spring → Markup.',
+                'entry_point': f"₹{range_high * 1.01:.2f} (Breakout above range)",
+                'stop_loss': f"₹{range_low * 0.98:.2f} (Below spring low)",
+                'target_1': f"₹{current_price * 1.20:.2f} (20% gain)",
+                'target_2': f"₹{range_high + (range_high - range_low):.2f} (Range projected)",
+                'action': 'BUY on Phase E markup with volume',
+                'rules': [
+                    'Phase A: Selling Climax detected',
+                    'Phase B: Trading range built',
+                    'Phase C: Spring completed',
+                    'Phase D: Sign of Strength present',
+                    f'Entry: Above ₹{range_high:.2f}',
+                    'Volume expansion required'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_wyckoff_distribution(self, lookback: int = 60) -> Dict:
+        """
+        Detect Wyckoff Distribution Pattern - Smart Money selling.
+        
+        Pattern Phases:
+        - Phase A: Buying Climax (BC) + Automatic Reaction (AR)
+        - Phase B: Building a Cause (trading range at top)
+        - Phase C: Upthrust (UTAD) or Test
+        - Phase D: Sign of Weakness (SOW) + Last Point of Supply (LPSY)
+        - Phase E: Markdown (breakdown)
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 50:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        volumes = df['Volume'].values
+        
+        # Phase A: Buying Climax (high volume at top)
+        volume_spike_idx = np.argmax(volumes)
+        if volume_spike_idx < len(df) * 0.3:  # Early in period
+            volume_spike = volumes[volume_spike_idx]
+            avg_volume = np.mean(volumes)
+            
+            if volume_spike > avg_volume * 2.5:
+                score += 0.2
+                
+                # Check for price spike upward
+                if volume_spike_idx > 5:
+                    price_before = prices[volume_spike_idx - 5]
+                    price_at = prices[volume_spike_idx]
+                    if price_at > price_before * 1.05:
+                        score += 0.1
+        
+        # Phase B: Trading Range at top
+        middle_section = df.iloc[int(len(df) * 0.3):int(len(df) * 0.7)]
+        if len(middle_section) > 10:
+            range_pct = (middle_section['High'].max() - middle_section['Low'].min()) / middle_section['Close'].mean()
+            
+            if range_pct < 0.15:
+                score += 0.2
+        
+        # Phase C: Upthrust (higher high on lower volume)
+        recent_third = df.tail(int(len(df) * 0.3))
+        if len(recent_third) > 5:
+            recent_high = recent_third['High'].max()
+            middle_high = middle_section['High'].max() if len(middle_section) > 0 else recent_high
+            
+            if recent_high > middle_high * 1.01:  # Higher high
+                high_idx = recent_third['High'].idxmax()
+                high_volume = df.loc[high_idx, 'Volume']
+                
+                if high_volume < df['Volume'].mean():  # Lower volume
+                    score += 0.2
+        
+        # Phase D: Sign of Weakness
+        last_10 = df.tail(10)
+        if len(last_10) > 5:
+            # Lower lows on increasing volume
+            if last_10['Close'].iloc[-1] < last_10['Close'].iloc[0]:
+                if last_10['Volume'].tail(5).mean() > last_10['Volume'].head(5).mean():
+                    score += 0.2
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            range_high = df['High'].tail(40).max()
+            range_low = df['Low'].tail(40).min()
+            
+            return {
+                'detected': True,
+                'pattern': 'Wyckoff Distribution',
+                'signal': 'BEARISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': 'Smart Money distribution. Buying climax → Range → UTAD → Markdown.',
+                'entry_point': f"₹{range_low * 0.99:.2f} (SHORT below range)",
+                'stop_loss': f"₹{range_high * 1.02:.2f} (Above UTAD high)",
+                'target_1': f"₹{current_price * 0.85:.2f} (15% decline)",
+                'target_2': f"₹{range_low - (range_high - range_low):.2f} (Range projected down)",
+                'action': '🔻 SHORT on Phase E markdown with volume',
+                'rules': [
+                    'Phase A: Buying Climax detected',
+                    'Phase B: Range at top',
+                    'Phase C: UTAD completed',
+                    'Phase D: Sign of Weakness',
+                    f'SHORT Entry: Below ₹{range_low:.2f}',
+                    'Volume on breakdown confirms'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    # ============================================================================
+    # CANSLIM SCORING SYSTEM
+    # ============================================================================
+    
+    def detect_canslim_setup(self) -> Dict:
+        """
+        Detect CANSLIM Pattern - William O'Neil's methodology.
+        
+        CANSLIM Criteria:
+        - C: Current Quarterly Earnings (25%+ growth)
+        - A: Annual Earnings Growth (25%+ for 3 years)
+        - N: New Product/Management/High (52-week high)
+        - S: Supply & Demand (Volume surge on breakout)
+        - L: Leader or Laggard (Top 20% in industry)
+        - I: Institutional Sponsorship (Funds buying)
+        - M: Market Direction (Uptrend confirmed)
+        """
+        df = self.data
+        if len(df) < 100:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        max_score = 7  # One point per CANSLIM letter
+        
+        current_price = df['Close'].iloc[-1]
+        
+        # N: New High (within 15% of 52-week high)
+        high_52w = df['High'].tail(252).max() if len(df) >= 252 else df['High'].max()
+        if current_price > high_52w * 0.85:
+            score += 1
+            if current_price >= high_52w * 0.98:  # Very close to new high
+                score += 0.5
+        
+        # S: Supply & Demand (Volume analysis)
+        recent_volume = df['Volume'].tail(20).mean()
+        baseline_volume = df['Volume'].tail(100).mean()
+        
+        if recent_volume > baseline_volume * 1.5:  # Volume surge
+            score += 1
+        
+        # Check for volume on up days vs down days
+        last_20 = df.tail(20)
+        up_days = last_20[last_20['Close'] > last_20['Open']]
+        down_days = last_20[last_20['Close'] < last_20['Open']]
+        
+        if len(up_days) > 0 and len(down_days) > 0:
+            if up_days['Volume'].mean() > down_days['Volume'].mean() * 1.2:
+                score += 0.5
+        
+        # M: Market Direction (Price trend)
+        sma_50 = df['Close'].tail(50).mean()
+        sma_200 = df['Close'].tail(200).mean() if len(df) >= 200 else sma_50
+        
+        # Golden Cross or above both MAs
+        if current_price > sma_50 and current_price > sma_200:
+            score += 1
+            if sma_50 > sma_200:  # Golden Cross
+                score += 0.5
+        
+        # Price pattern: Cup with Handle or other base
+        price_range_100 = (df['High'].tail(100).max() - df['Low'].tail(100).min()) / df['Close'].tail(100).mean()
+        price_range_20 = (df['High'].tail(20).max() - df['Low'].tail(20).min()) / df['Close'].tail(20).mean()
+        
+        if price_range_100 > 0.20 and price_range_20 < 0.10:  # Base forming
+            score += 1
+        
+        # Relative Strength (vs recent average)
+        price_change_4w = (current_price - df['Close'].iloc[-20]) / df['Close'].iloc[-20] if len(df) >= 20 else 0
+        if price_change_4w > 0.10:  # Outperforming (10%+ in 4 weeks)
+            score += 1
+        
+        # Institutional accumulation proxy (Rising volume + rising price)
+        last_30 = df.tail(30)
+        volume_trend = np.polyfit(range(len(last_30)), last_30['Volume'].values, 1)[0]
+        price_trend = np.polyfit(range(len(last_30)), last_30['Close'].values, 1)[0]
+        
+        if volume_trend > 0 and price_trend > 0:  # Both rising
+            score += 1
+        
+        # Normalize score
+        final_score = score / max_score
+        
+        if final_score > 0.65:  # At least 5 out of 7 criteria met
+            pivot_point = df['High'].tail(20).max()
+            base_low = df['Low'].tail(50).min()
+            
+            return {
+                'detected': True,
+                'pattern': 'CANSLIM Setup',
+                'signal': 'BULLISH',
+                'confidence': 'HIGH' if final_score > 0.80 else 'MEDIUM',
+                'score': final_score,
+                'description': "William O'Neil's growth stock pattern. Multiple criteria aligned.",
+                'entry_point': f"₹{pivot_point * 1.02:.2f} (Breakout above pivot)",
+                'stop_loss': f"₹{base_low * 0.97:.2f} (Below base)",
+                'target_1': f"₹{current_price * 1.20:.2f} (20% gain - typical first move)",
+                'target_2': f"₹{current_price * 1.50:.2f} (50% gain - O'Neil target)",
+                'action': 'BUY on breakout with 40-50% above average volume',
+                'rules': [
+                    f'CANSLIM Score: {final_score*100:.0f}%',
+                    '✓ N: Near 52-week high' if current_price > high_52w * 0.85 else '✗ N: Not at new high',
+                    '✓ S: Volume surge present' if recent_volume > baseline_volume * 1.5 else '✗ S: Low volume',
+                    '✓ M: Above 50/200 SMA' if current_price > sma_50 and current_price > sma_200 else '✗ M: Below MAs',
+                    f'Entry: Above ₹{pivot_point:.2f} with volume',
+                    'Buy strongest stocks in strongest groups',
+                    'Cut losses at 7-8% below entry'
+                ]
+            }
+        
+        return {'detected': False, 'score': final_score}
+    
+    # ============================================================================
     # MAIN DETECTION METHODS
     # ============================================================================
     
@@ -1525,6 +1830,29 @@ class PatternDetector:
         
         return patterns
     
+    def detect_all_wyckoff_canslim_patterns(self) -> List[Dict]:
+        """
+        Detect Wyckoff and CANSLIM patterns.
+        
+        Returns:
+            List of detected patterns with full details
+        """
+        patterns = []
+        
+        # Run Wyckoff and CANSLIM detections
+        detectors = [
+            self.detect_wyckoff_accumulation,
+            self.detect_wyckoff_distribution,
+            self.detect_canslim_setup
+        ]
+        
+        for detector in detectors:
+            result = detector()
+            if result.get('detected', False):
+                patterns.append(result)
+        
+        return patterns
+    
     def detect_all_patterns(self) -> Dict[str, List[Dict]]:
         """
         Detect all patterns across all categories.
@@ -1535,12 +1863,14 @@ class PatternDetector:
         zanger = self.detect_all_zanger_patterns()
         classic = self.detect_all_classic_patterns()
         swing = self.detect_all_swing_patterns()
+        wyckoff_canslim = self.detect_all_wyckoff_canslim_patterns()
         
         return {
             'zanger_patterns': zanger,
             'classic_patterns': classic,
             'swing_patterns': swing,
-            'all_patterns': zanger + classic + swing
+            'wyckoff_canslim_patterns': wyckoff_canslim,
+            'all_patterns': zanger + classic + swing + wyckoff_canslim
         }
 
 
@@ -1628,7 +1958,8 @@ if __name__ == "__main__":
     print("Pattern Detector Module - Ready for import")
     print("Available classes: PatternDetector")
     print("Available functions: format_pattern_summary, get_pattern_statistics")
-    print("\nTotal Patterns: 19")
+    print("\nTotal Patterns: 22")
     print("- Zanger: 6")
     print("- Classic: 8 (including bearish with SHORT signals)")
     print("- Swing: 5")
+    print("- Wyckoff & CANSLIM: 3")
