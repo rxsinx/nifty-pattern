@@ -431,7 +431,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 x1=box_end,
                 y0=box_bottom,
                 y1=box_top,
-                line=dict(color='#4169E1', width=3, dash='dash'),
+                line=dict(color='black', width=1.5, dash='dash'),
                 fillcolor='rgba(65, 105, 225, 0.1)',
                 row=1, col=1
             )
@@ -461,7 +461,7 @@ def draw_patterns_on_chart(fig, patterns, df):
             fig.add_annotation(
                 x=box_start + (box_end - box_start) / 2,
                 y=(box_top + box_bottom) / 2,
-                text="<b>DARVAS BOX</b>",
+                text="<b>DB</b>",
                 showarrow=False,
                 font=dict(color='#4169E1', size=14, family='Arial Black'),
                 bgcolor='rgba(255, 255, 255, 0.8)',
