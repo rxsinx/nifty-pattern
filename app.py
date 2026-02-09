@@ -670,7 +670,14 @@ def main():
         - ✅ Gap and Go
         - ✅ ABCD Pattern
         
+        **Wyckoff & CANSLIM (3):**
+        - ✅ Wyckoff Accumulation 📊
+        - ✅ Wyckoff Distribution 🔻
+        - ✅ CANSLIM Setup 💎
+        
         🔻 = **SHORT Signal**
+        📊 = **Smart Money**
+        💎 = **Growth Stock**
         """)
         
         st.markdown("---")
@@ -696,7 +703,8 @@ def main():
                 zanger_patterns = analyzer.detect_chart_patterns()
                 swing_patterns = analyzer.detect_swing_patterns()
                 classic_patterns = analyzer.pattern_detector.detect_all_classic_patterns() if analyzer.pattern_detector else []
-                all_patterns = zanger_patterns + swing_patterns + classic_patterns
+                wyckoff_canslim_patterns = analyzer.pattern_detector.detect_all_wyckoff_canslim_patterns() if analyzer.pattern_detector else []
+                all_patterns = zanger_patterns + swing_patterns + classic_patterns + wyckoff_canslim_patterns
                 
                 # Company Information
                 st.markdown('<div class="sub-header">🏢 Company Overview</div>', unsafe_allow_html=True)
@@ -776,7 +784,7 @@ def main():
                 # Chart Patterns
                 st.markdown('<div class="sub-header">📈 Chart Pattern Detection</div>', unsafe_allow_html=True)
                 
-                tab1, tab2, tab3 = st.tabs(["Dan Zanger Patterns", "Qullamaggie Patterns", "Classic Patterns"])
+                tab1, tab2, tab3, tab4 = st.tabs(["Dan Zanger Patterns", "Qullamaggie Patterns", "Classic Patterns", "Wyckoff & CANSLIM"])
                 
                 with tab1:
                     if zanger_patterns:
@@ -902,6 +910,88 @@ def main():
                                             st.markdown(f"**🎯 T2:** {pattern.get('target_2', 'N/A')}")
                     else:
                         st.info("No Classic patterns detected in current timeframe")
+                
+                with tab4:
+                    if wyckoff_canslim_patterns:
+                        st.success(f"✅ Found {len(wyckoff_canslim_patterns)} Wyckoff/CANSLIM pattern(s)")
+                        
+                        for pattern in wyckoff_canslim_patterns:
+                            signal = pattern.get('signal', 'NEUTRAL')
+                            pattern_name = pattern.get('pattern', 'Unknown')
+                            
+                            # Determine icon and styling
+                            if 'CANSLIM' in pattern_name:
+                                icon = "💎"
+                                color = "blue"
+                            elif 'Accumulation' in pattern_name:
+                                icon = "📊"
+                                color = "green"
+                            elif 'Distribution' in pattern_name:
+                                icon = "📉"
+                                color = "red"
+                            else:
+                                icon = "📈"
+                                color = "gray"
+                            
+                            with st.expander(f"{icon} {pattern_name} - {signal}", expanded=True):
+                                st.markdown(f"**Description:** {pattern['description']}")
+                                st.markdown(f"**Action:** {pattern['action']}")
+                                
+                                # Special display for CANSLIM
+                                if 'CANSLIM' in pattern_name:
+                                    st.info("💎 **CANSLIM** = Growth stock methodology by William O'Neil (Investor's Business Daily)")
+                                    
+                                    # Display CANSLIM score
+                                    canslim_score = pattern.get('score', 0) * 100
+                                    st.progress(pattern.get('score', 0))
+                                    st.markdown(f"**CANSLIM Score: {canslim_score:.0f}%** (Need 65%+ to qualify)")
+                                
+                                # Special display for Wyckoff
+                                if 'Wyckoff' in pattern_name:
+                                    if 'Accumulation' in pattern_name:
+                                        st.success("📊 **Smart Money Accumulation** - Institutions buying quietly")
+                                        st.markdown("""
+                                        **Wyckoff Phases:**
+                                        - ✅ Phase A: Selling Climax completed
+                                        - ✅ Phase B: Trading range built
+                                        - ✅ Phase C: Spring (final shakeout) done
+                                        - ✅ Phase D: Sign of Strength appearing
+                                        - 🎯 Phase E: Markup phase ready
+                                        """)
+                                    else:
+                                        st.warning("📉 **Smart Money Distribution** - Institutions selling into strength")
+                                        st.markdown("""
+                                        **Wyckoff Phases:**
+                                        - ✅ Phase A: Buying Climax completed
+                                        - ✅ Phase B: Range at top built
+                                        - ✅ Phase C: UTAD (upthrust) done
+                                        - ✅ Phase D: Sign of Weakness appearing
+                                        - 🎯 Phase E: Markdown phase ready
+                                        """)
+                                
+                                # Display entry/exit points
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    if 'entry_point' in pattern:
+                                        entry_label = "📍 SHORT Entry" if signal == 'BEARISH' else "📍 Entry"
+                                        st.markdown(f"**{entry_label}:** {pattern.get('entry_point', 'N/A')}")
+                                with col2:
+                                    if 'stop_loss' in pattern:
+                                        st.markdown(f"**🛑 Stop:** {pattern.get('stop_loss', 'N/A')}")
+                                with col3:
+                                    if 'target_1' in pattern:
+                                        st.markdown(f"**🎯 T1:** {pattern.get('target_1', 'N/A')}")
+                                with col4:
+                                    if 'target_2' in pattern:
+                                        st.markdown(f"**🎯 T2:** {pattern.get('target_2', 'N/A')}")
+                                
+                                # Display rules
+                                if pattern.get('rules'):
+                                    with st.expander("📋 Trading Rules", expanded=False):
+                                        for rule in pattern['rules']:
+                                            st.markdown(f"- {rule}")
+                    else:
+                        st.info("No Wyckoff or CANSLIM patterns detected in current timeframe")
                 
                 # Charts
                 st.markdown('<div class="sub-header">📊 Technical Analysis Charts</div>', unsafe_allow_html=True)
