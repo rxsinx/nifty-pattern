@@ -645,12 +645,32 @@ def main():
         st.markdown("---")
         st.markdown("### 📚 Pattern Detection")
         st.markdown("""
+        **Dan Zanger (6):**
         - ✅ Cup and Handle
         - ✅ High Tight Flag
         - ✅ Ascending Triangle
-        - ✅ Volume Profile
+        - ✅ Flat Base
+        - ✅ Falling Wedge
+        - ✅ Double Bottom
+        
+        **Classic (8):**
+        - ✅ Head & Shoulders 🔻
+        - ✅ Double Top 🔻
+        - ✅ Descending Triangle 🔻
+        - ✅ Symmetrical Triangle
+        - ✅ Bull Flag
+        - ✅ Bear Flag 🔻
+        - ✅ Rising Wedge 🔻
+        - ✅ Pennant (Bull/Bear)
+        
+        **Qullamaggie (5):**
         - ✅ Episodic Pivot
-        - ✅ Parabolic Patterns
+        - ✅ Breakout
+        - ✅ Parabolic Short 🔻
+        - ✅ Gap and Go
+        - ✅ ABCD Pattern
+        
+        🔻 = **SHORT Signal**
         """)
         
         st.markdown("---")
@@ -675,7 +695,8 @@ def main():
                 # Detect all patterns first
                 zanger_patterns = analyzer.detect_chart_patterns()
                 swing_patterns = analyzer.detect_swing_patterns()
-                all_patterns = zanger_patterns + swing_patterns
+                classic_patterns = analyzer.pattern_detector.detect_all_classic_patterns() if analyzer.pattern_detector else []
+                all_patterns = zanger_patterns + swing_patterns + classic_patterns
                 
                 # Company Information
                 st.markdown('<div class="sub-header">🏢 Company Overview</div>', unsafe_allow_html=True)
@@ -755,7 +776,7 @@ def main():
                 # Chart Patterns
                 st.markdown('<div class="sub-header">📈 Chart Pattern Detection</div>', unsafe_allow_html=True)
                 
-                tab1, tab2 = st.tabs(["Dan Zanger Patterns", "Qullamaggie Patterns"])
+                tab1, tab2, tab3 = st.tabs(["Dan Zanger Patterns", "Qullamaggie Patterns", "Classic Patterns"])
                 
                 with tab1:
                     if zanger_patterns:
@@ -806,6 +827,81 @@ def main():
                                         st.markdown(f"**🎯 T2:** {pattern.get('target_2', 'N/A')}")
                     else:
                         st.info("No Qullamaggie swing patterns detected in current timeframe")
+                
+                with tab3:
+                    if classic_patterns:
+                        st.success(f"✅ Found {len(classic_patterns)} Classic pattern(s)")
+                        
+                        # Separate bullish and bearish patterns
+                        bullish_classic = [p for p in classic_patterns if p.get('signal') == 'BULLISH']
+                        bearish_classic = [p for p in classic_patterns if p.get('signal') == 'BEARISH']
+                        neutral_classic = [p for p in classic_patterns if p.get('signal') not in ['BULLISH', 'BEARISH']]
+                        
+                        if bullish_classic:
+                            st.markdown("### 🟢 Bullish Patterns")
+                            for pattern in bullish_classic:
+                                with st.expander(f"🔹 {pattern['pattern']} - {pattern['signal']}", expanded=True):
+                                    st.markdown(f"**Description:** {pattern['description']}")
+                                    st.markdown(f"**Action:** {pattern['action']}")
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        if 'entry_point' in pattern:
+                                            st.markdown(f"**📍 Entry:** {pattern.get('entry_point', 'N/A')}")
+                                    with col2:
+                                        if 'stop_loss' in pattern:
+                                            st.markdown(f"**🛑 Stop:** {pattern.get('stop_loss', 'N/A')}")
+                                    with col3:
+                                        if 'target_1' in pattern:
+                                            st.markdown(f"**🎯 T1:** {pattern.get('target_1', 'N/A')}")
+                                    with col4:
+                                        if 'target_2' in pattern:
+                                            st.markdown(f"**🎯 T2:** {pattern.get('target_2', 'N/A')}")
+                        
+                        if bearish_classic:
+                            st.markdown("### 🔴 Bearish Patterns (SHORT Opportunities)")
+                            for pattern in bearish_classic:
+                                with st.expander(f"🔻 {pattern['pattern']} - {pattern['signal']}", expanded=True):
+                                    st.markdown(f"**Description:** {pattern['description']}")
+                                    st.markdown(f"**Action:** {pattern['action']}")
+                                    st.warning("⚠️ **SHORT POSITION** - Profit from declining prices")
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        if 'entry_point' in pattern:
+                                            st.markdown(f"**📍 SHORT Entry:** {pattern.get('entry_point', 'N/A')}")
+                                    with col2:
+                                        if 'stop_loss' in pattern:
+                                            st.markdown(f"**🛑 Stop:** {pattern.get('stop_loss', 'N/A')}")
+                                    with col3:
+                                        if 'target_1' in pattern:
+                                            st.markdown(f"**🎯 T1:** {pattern.get('target_1', 'N/A')}")
+                                    with col4:
+                                        if 'target_2' in pattern:
+                                            st.markdown(f"**🎯 T2:** {pattern.get('target_2', 'N/A')}")
+                        
+                        if neutral_classic:
+                            st.markdown("### ⚡ Neutral/Breakout Patterns")
+                            for pattern in neutral_classic:
+                                with st.expander(f"⚡ {pattern['pattern']} - {pattern['signal']}", expanded=True):
+                                    st.markdown(f"**Description:** {pattern['description']}")
+                                    st.markdown(f"**Action:** {pattern['action']}")
+                                    
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    with col1:
+                                        if 'entry_point' in pattern:
+                                            st.markdown(f"**📍 Entry:** {pattern.get('entry_point', 'N/A')}")
+                                    with col2:
+                                        if 'stop_loss' in pattern:
+                                            st.markdown(f"**🛑 Stop:** {pattern.get('stop_loss', 'N/A')}")
+                                    with col3:
+                                        if 'target_1' in pattern:
+                                            st.markdown(f"**🎯 T1:** {pattern.get('target_1', 'N/A')}")
+                                    with col4:
+                                        if 'target_2' in pattern:
+                                            st.markdown(f"**🎯 T2:** {pattern.get('target_2', 'N/A')}")
+                    else:
+                        st.info("No Classic patterns detected in current timeframe")
                 
                 # Charts
                 st.markdown('<div class="sub-header">📊 Technical Analysis Charts</div>', unsafe_allow_html=True)
