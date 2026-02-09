@@ -110,6 +110,7 @@ class IndianEquityAnalyzer:
         df['SMA_200'] = SMAIndicator(df['Close'], window=200).sma_indicator()
         df['EMA_10'] = EMAIndicator(df['Close'], window=10).ema_indicator()
         df['EMA_20'] = EMAIndicator(df['Close'], window=20).ema_indicator()
+        df['EMA_70'] = EMAIndicator(df['Close'], window=70).ema_indicator()
         
         # MACD
         macd = MACD(df['Close'])
@@ -513,7 +514,7 @@ def create_candlestick_chart(analyzer, patterns=None):
     )
     
     # Moving Averages
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], name='SMA 20', line=dict(color='orange', width=1)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_70'], name='EMA 70', line=dict(color='black', width=1,dash='dash')), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], name='SMA 50', line=dict(color='blue', width=1)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], name='SMA 200', line=dict(color='red', width=2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_10'], name='EMA 10', line=dict(color='green', width=1, dash='dash')), row=1, col=1)
