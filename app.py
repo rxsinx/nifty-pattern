@@ -110,7 +110,6 @@ class IndianEquityAnalyzer:
         df['SMA_200'] = SMAIndicator(df['Close'], window=200).sma_indicator()
         df['EMA_10'] = EMAIndicator(df['Close'], window=10).ema_indicator()
         df['EMA_20'] = EMAIndicator(df['Close'], window=20).ema_indicator()
-        df['EMA_70'] = EMAIndicator(df['Close'], window=70).ema_indicator()
         
         # MACD
         macd = MACD(df['Close'])
@@ -370,16 +369,134 @@ class IndianEquityAnalyzer:
         
         return info
 
-def create_candlestick_chart(analyzer):
-    """Create advanced candlestick chart with indicators"""
-    df = analyzer.data.tail(200)
+def extract_price_from_string(price_str):
+    """Extract numeric price from string like '₹1234.56'"""
+    if isinstance(price_str, (int, float)):
+        return float(price_str)
+    try:
+        # Remove currency symbol and extract number
+        import re
+        numbers = re.findall(r'[\d.]+', str(price_str))
+        if numbers:
+            return float(numbers[0])
+    except:
+        pass
+    return None
+
+def draw_patterns_on_chart(fig, patterns, df):
+    """
+    Draw detected patterns on the chart with entry/exit points.
+    
+    Args:
+        fig: Plotly figure object
+        patterns: List of detected patterns
+        df: Price data DataFrame
+    """
+    if not patterns:
+        return fig
+    
+    # Get the last date for annotations
+    last_date = df.index[-1]
+    
+    for i, pattern in enumerate(patterns):
+        # Extract prices from pattern
+        entry_price = extract_price_from_string(pattern.get('entry_point', ''))
+        stop_loss = extract_price_from_string(pattern.get('stop_loss', ''))
+        target_1 = extract_price_from_string(pattern.get('target_1', ''))
+        target_2 = extract_price_from_string(pattern.get('target_2', ''))
+        
+        pattern_name = pattern.get('pattern', 'Unknown')
+        signal = pattern.get('signal', 'NEUTRAL')
+        
+        # Choose color based on signal
+        if signal == 'BULLISH':
+            color = '#00cc66'  # Green
+        elif signal == 'BEARISH':
+            color = '#ff4d4d'  # Red
+        else:
+            color = '#ffa500'  # Orange
+        
+        # Draw Entry Point
+        if entry_price:
+            fig.add_hline(
+                y=entry_price,
+                line_dash="dash",
+                line_color=color,
+                line_width=2,
+                annotation_text=f"📍 ENTRY: ₹{entry_price:.2f}",
+                annotation_position="right",
+                row=1, col=1
+            )
+        
+        # Draw Stop Loss
+        if stop_loss:
+            fig.add_hline(
+                y=stop_loss,
+                line_dash="dot",
+                line_color="red",
+                line_width=2,
+                annotation_text=f"🛑 STOP: ₹{stop_loss:.2f}",
+                annotation_position="right",
+                row=1, col=1
+            )
+        
+        # Draw Target 1
+        if target_1:
+            fig.add_hline(
+                y=target_1,
+                line_dash="dot",
+                line_color="green",
+                line_width=2,
+                annotation_text=f"🎯 T1: ₹{target_1:.2f}",
+                annotation_position="right",
+                row=1, col=1
+            )
+        
+        # Draw Target 2
+        if target_2:
+            fig.add_hline(
+                y=target_2,
+                line_dash="dot",
+                line_color="darkgreen",
+                line_width=2,
+                annotation_text=f"🎯 T2: ₹{target_2:.2f}",
+                annotation_position="right",
+                row=1, col=1
+            )
+        
+        # Add pattern label annotation
+        fig.add_annotation(
+            x=last_date,
+            y=df['High'].max() * (1 - 0.05 * i),  # Stack annotations
+            text=f"<b>{pattern_name}</b>",
+            showarrow=True,
+            arrowhead=2,
+            arrowsize=1,
+            arrowwidth=2,
+            arrowcolor=color,
+            ax=-50,
+            ay=-30,
+            bgcolor=color,
+            font=dict(color='white', size=12),
+            bordercolor=color,
+            borderwidth=2,
+            borderpad=4,
+            opacity=0.9,
+            row=1, col=1
+        )
+    
+    return fig
+
+def create_candlestick_chart(analyzer, patterns=None):
+    """Create advanced candlestick chart with indicators and patterns"""
+    df = analyzer.data.tail(100)
     
     fig = make_subplots(
         rows=4, cols=1,
         shared_xaxes=True,
         vertical_spacing=0.03,
         row_heights=[0.5, 0.15, 0.15, 0.2],
-        subplot_titles=('Price Action with Indicators', 'MACD', 'RSI', 'Volume Profile')
+        subplot_titles=('Price Action with Indicators & Patterns', 'MACD', 'RSI', 'Volume Profile')
     )
     
     # Candlestick
@@ -396,7 +513,7 @@ def create_candlestick_chart(analyzer):
     )
     
     # Moving Averages
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_70'], name='EMA 70', line=dict(color='orange', width=1)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], name='SMA 20', line=dict(color='orange', width=1)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], name='SMA 50', line=dict(color='blue', width=1)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], name='SMA 200', line=dict(color='red', width=2)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['EMA_10'], name='EMA 10', line=dict(color='green', width=1, dash='dash')), row=1, col=1)
@@ -426,9 +543,13 @@ def create_candlestick_chart(analyzer):
     fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name='Volume', marker_color=colors_vol), row=4, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['Volume_SMA'], name='Vol SMA', line=dict(color='orange', width=2)), row=4, col=1)
     
+    # Draw patterns if provided
+    if patterns:
+        fig = draw_patterns_on_chart(fig, patterns, df)
+    
     # Update layout
     fig.update_layout(
-        title=f'{analyzer.symbol} - Master Trader Analysis',
+        title=f'{analyzer.symbol} - Master Trader Analysis with Pattern Detection',
         xaxis_rangeslider_visible=False,
         height=1200,
         showlegend=True,
@@ -516,6 +637,9 @@ def main():
             index=3
         )
         
+        show_patterns_on_chart = st.checkbox("Show Patterns on Chart", value=True, 
+                                             help="Draw pattern lines and entry/exit points on the chart")
+        
         analyze_btn = st.button("🔍 Analyze Stock", type="primary", use_container_width=True)
         
         st.markdown("---")
@@ -548,6 +672,11 @@ def main():
             analyzer = IndianEquityAnalyzer(symbol, period)
             
             if analyzer.fetch_data():
+                # Detect all patterns first
+                zanger_patterns = analyzer.detect_chart_patterns()
+                swing_patterns = analyzer.detect_swing_patterns()
+                all_patterns = zanger_patterns + swing_patterns
+                
                 # Company Information
                 st.markdown('<div class="sub-header">🏢 Company Overview</div>', unsafe_allow_html=True)
                 
@@ -629,38 +758,52 @@ def main():
                 tab1, tab2 = st.tabs(["Dan Zanger Patterns", "Qullamaggie Patterns"])
                 
                 with tab1:
-                    zanger_patterns = analyzer.detect_chart_patterns()
                     if zanger_patterns:
+                        st.success(f"✅ Found {len(zanger_patterns)} Dan Zanger pattern(s)")
                         for pattern in zanger_patterns:
                             with st.expander(f"🔹 {pattern['pattern']} - {pattern['signal']}", expanded=True):
                                 st.markdown(f"**Description:** {pattern['description']}")
                                 st.markdown(f"**Action:** {pattern['action']}")
                                 
-                                # Display additional pattern details if available
-                                if 'entry_point' in pattern:
-                                    st.markdown(f"**Entry:** {pattern['entry_point']}")
-                                if 'stop_loss' in pattern:
-                                    st.markdown(f"**Stop Loss:** {pattern['stop_loss']}")
-                                if 'target_1' in pattern:
-                                    st.markdown(f"**Target 1:** {pattern['target_1']}")
+                                # Display entry/exit points
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    if 'entry_point' in pattern:
+                                        st.markdown(f"**📍 Entry:** {pattern['entry_point']}")
+                                with col2:
+                                    if 'stop_loss' in pattern:
+                                        st.markdown(f"**🛑 Stop:** {pattern['stop_loss']}")
+                                with col3:
+                                    if 'target_1' in pattern:
+                                        st.markdown(f"**🎯 T1:** {pattern['target_1']}")
+                                with col4:
+                                    if 'target_2' in pattern:
+                                        st.markdown(f"**🎯 T2:** {pattern['target_2']}")
                     else:
                         st.info("No Dan Zanger patterns detected in current timeframe")
                 
                 with tab2:
-                    swing_patterns = analyzer.detect_swing_patterns()
                     if swing_patterns:
+                        st.success(f"✅ Found {len(swing_patterns)} Qullamaggie pattern(s)")
                         for pattern in swing_patterns:
                             with st.expander(f"🔹 {pattern['pattern']} - {pattern['signal']}", expanded=True):
                                 st.markdown(f"**Description:** {pattern['description']}")
                                 st.markdown(f"**Action:** {pattern['action']}")
                                 
-                                # Display additional pattern details if available
-                                if 'entry_point' in pattern:
-                                    st.markdown(f"**Entry:** {pattern['entry_point']}")
-                                if 'stop_loss' in pattern:
-                                    st.markdown(f"**Stop Loss:** {pattern['stop_loss']}")
-                                if 'target_1' in pattern:
-                                    st.markdown(f"**Target 1:** {pattern['target_1']}")
+                                # Display entry/exit points
+                                col1, col2, col3, col4 = st.columns(4)
+                                with col1:
+                                    if 'entry_point' in pattern:
+                                        st.markdown(f"**📍 Entry:** {pattern.get('entry_point', 'N/A')}")
+                                with col2:
+                                    if 'stop_loss' in pattern:
+                                        st.markdown(f"**🛑 Stop:** {pattern.get('stop_loss', 'N/A')}")
+                                with col3:
+                                    if 'target_1' in pattern:
+                                        st.markdown(f"**🎯 T1:** {pattern.get('target_1', 'N/A')}")
+                                with col4:
+                                    if 'target_2' in pattern:
+                                        st.markdown(f"**🎯 T2:** {pattern.get('target_2', 'N/A')}")
                     else:
                         st.info("No Qullamaggie swing patterns detected in current timeframe")
                 
@@ -670,7 +813,13 @@ def main():
                 chart_tab1, chart_tab2 = st.tabs(["Price Action & Indicators", "Volume Profile"])
                 
                 with chart_tab1:
-                    fig_candlestick = create_candlestick_chart(analyzer)
+                    # Create chart with or without patterns based on user preference
+                    if show_patterns_on_chart and all_patterns:
+                        st.info(f"📌 Showing {len(all_patterns)} detected pattern(s) on chart")
+                        fig_candlestick = create_candlestick_chart(analyzer, all_patterns)
+                    else:
+                        fig_candlestick = create_candlestick_chart(analyzer)
+                    
                     st.plotly_chart(fig_candlestick, use_container_width=True)
                 
                 with chart_tab2:
