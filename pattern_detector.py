@@ -5,10 +5,10 @@ Pattern Detection Module for Technical Analysis
 This module contains all chart pattern detection algorithms including:
 - Dan Zanger's patterns (Cup and Handle, High Tight Flag, etc.)
 - Qullamaggie's swing patterns (Breakout, Episodic Pivot, etc.)
-- Classic chart patterns (Head and Shoulders, Triangles, etc.)
+- Classic chart patterns (Head and Shoulders, Triangles, Flags, Wedges, etc.)
 
 Author: Market Analyzer Pro
-Version: 2.0
+Version: 3.0 - Added Classic Bearish Patterns with Short Signals
 """
 
 import numpy as np
@@ -500,6 +500,628 @@ class PatternDetector:
         return {'detected': False, 'score': score}
     
     # ============================================================================
+    # CLASSIC BEARISH PATTERNS (NEW - WITH SHORT SIGNALS)
+    # ============================================================================
+    
+    def detect_head_and_shoulders(self, lookback: int = 60) -> Dict:
+        """
+        Detect Head and Shoulders - Bearish reversal pattern.
+        
+        Pattern Characteristics:
+        - Left shoulder, higher head, right shoulder
+        - Neckline connects the two troughs
+        - Volume declining through pattern
+        - Breakdown below neckline = SHORT signal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 50:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        
+        # Find local maxima (peaks) and minima (troughs)
+        peaks = []
+        troughs = []
+        
+        for i in range(5, len(prices) - 5):
+            if prices[i] > max(prices[i-5:i]) and prices[i] > max(prices[i+1:i+6]):
+                peaks.append((i, prices[i]))
+            if prices[i] < min(prices[i-5:i]) and prices[i] < min(prices[i+1:i+6]):
+                troughs.append((i, prices[i]))
+        
+        # Need at least 3 peaks and 2 troughs
+        if len(peaks) >= 3 and len(troughs) >= 2:
+            # Check last 3 peaks for H&S pattern
+            left_shoulder = peaks[-3]
+            head = peaks[-2]
+            right_shoulder = peaks[-1]
+            
+            # Head should be higher than both shoulders
+            if head[1] > left_shoulder[1] and head[1] > right_shoulder[1]:
+                score += 0.3
+                
+                # Shoulders should be roughly equal (within 5%)
+                shoulder_diff = abs(left_shoulder[1] - right_shoulder[1]) / left_shoulder[1]
+                if shoulder_diff < 0.05:
+                    score += 0.2
+                
+                # Neckline (support level connecting troughs)
+                if len(troughs) >= 2:
+                    trough1 = troughs[-2]
+                    trough2 = troughs[-1]
+                    neckline = (trough1[1] + trough2[1]) / 2
+                    
+                    # Current price near or below neckline
+                    current_price = prices[-1]
+                    if current_price < neckline * 1.02:
+                        score += 0.3
+                    
+                    # Volume declining
+                    if df['Volume'].iloc[-10:].mean() < df['Volume'].iloc[-30:-10].mean():
+                        score += 0.2
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            neckline = df['Low'].tail(30).min()
+            head_price = df['High'].tail(40).max()
+            pattern_height = head_price - neckline
+            
+            return {
+                'detected': True,
+                'pattern': 'Head and Shoulders',
+                'signal': 'BEARISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': 'Classic bearish reversal. Uptrend exhaustion pattern.',
+                'entry_point': f"₹{neckline * 0.98:.2f} (SHORT below neckline)",
+                'stop_loss': f"₹{head_price * 1.02:.2f} (Above head)",
+                'target_1': f"₹{neckline - pattern_height:.2f} (Height projected down)",
+                'target_2': f"₹{neckline - (pattern_height * 1.5):.2f} (1.5x height down)",
+                'action': '🔻 SHORT on neckline breakdown with volume',
+                'rules': [
+                    'Wait for neckline break',
+                    f'SHORT Entry: Below ₹{neckline:.2f}',
+                    f'Stop: Above ₹{head_price:.2f}',
+                    'Volume surge on breakdown'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_double_top(self, lookback: int = 40) -> Dict:
+        """
+        Detect Double Top - M-shaped bearish reversal pattern.
+        
+        Pattern Characteristics:
+        - Two peaks at similar price (within 3%)
+        - Trough between peaks (neckline)
+        - Lower volume on second peak
+        - Breakdown below neckline = SHORT signal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 40:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        
+        # Find local maxima
+        maxima_indices = []
+        for i in range(1, len(prices) - 1):
+            if prices[i] > prices[i-1] and prices[i] > prices[i+1]:
+                maxima_indices.append(i)
+        
+        if len(maxima_indices) >= 2:
+            peak1_idx = maxima_indices[-2]
+            peak2_idx = maxima_indices[-1]
+            
+            peak1_price = prices[peak1_idx]
+            peak2_price = prices[peak2_idx]
+            
+            price_diff = abs(peak1_price - peak2_price) / peak1_price
+            
+            if price_diff < 0.03:  # Within 3%
+                score += 0.3
+            
+            if peak2_idx - peak1_idx > 10:
+                between_prices = prices[peak1_idx:peak2_idx]
+                trough_price = np.min(between_prices)
+                
+                # Volume analysis (second peak lower volume)
+                volume1 = df['Volume'].iloc[peak1_idx]
+                volume2 = df['Volume'].iloc[peak2_idx]
+                
+                if volume2 < volume1:
+                    score += 0.2
+                
+                # Near breakdown
+                current_price = prices[-1]
+                if current_price < trough_price * 1.02:
+                    score += 0.3
+                
+                # Volume increase on breakdown
+                recent_volume = df['Volume'].tail(3).mean()
+                avg_volume = df['Volume'].mean()
+                if recent_volume > avg_volume * 1.2:
+                    score += 0.2
+        
+        if score > 0.7:
+            top = df['High'].max()
+            neckline = df['Low'].tail(30).min()
+            pattern_height = top - neckline
+            
+            return {
+                'detected': True,
+                'pattern': 'Double Top',
+                'signal': 'BEARISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': 'M-shaped bearish reversal = strong resistance.',
+                'entry_point': f"₹{neckline * 0.98:.2f} (SHORT below neckline)",
+                'stop_loss': f"₹{top * 1.02:.2f} (Above peaks)",
+                'target_1': f"₹{neckline - pattern_height:.2f} (Height down)",
+                'target_2': f"₹{neckline - (pattern_height * 1.5):.2f} (1.5x height down)",
+                'action': '🔻 SHORT on neckline breakdown with volume',
+                'rules': [
+                    'Two tops within 3%',
+                    f'SHORT Entry: Below ₹{neckline:.2f}',
+                    f'Stop: Above ₹{top:.2f}'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_descending_triangle(self, lookback: int = 30) -> Dict:
+        """
+        Detect Descending Triangle - Bearish continuation pattern.
+        
+        Pattern Characteristics:
+        - Flat support (horizontal bottom)
+        - Lower highs (descending resistance)
+        - Volume declining during formation
+        - Breakdown below support = SHORT signal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 30:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        
+        # Support line (flat bottom)
+        lows = df['Low'].values
+        support_slope = np.polyfit(range(len(lows)), lows, 1)[0]
+        support_variance = np.std(lows) / np.mean(lows)
+        
+        if support_variance < 0.02 and abs(support_slope) < 0.001:
+            score += 0.4
+        
+        # Resistance line (descending)
+        highs = df['High'].values
+        resistance_slope = np.polyfit(range(len(highs)), highs, 1)[0]
+        
+        if resistance_slope < -0.001:
+            score += 0.3
+        
+        # Volume declining
+        volume_trend = np.polyfit(range(len(df)), df['Volume'].values, 1)[0]
+        if volume_trend < 0:
+            score += 0.2
+        
+        # Near breakdown
+        current_close = df['Close'].iloc[-1]
+        support_level = np.mean(lows[-5:])
+        
+        if current_close < support_level * 1.02:
+            score += 0.1
+        
+        if score > 0.7:
+            support = df['Low'].min()
+            resistance = df['High'].max()
+            triangle_height = resistance - support
+            
+            return {
+                'detected': True,
+                'pattern': 'Descending Triangle',
+                'signal': 'BEARISH',
+                'confidence': 'MEDIUM',
+                'score': score,
+                'description': 'Sellers aggressive at support. Lower highs = distribution.',
+                'entry_point': f"₹{support * 0.98:.2f} (SHORT below support)",
+                'stop_loss': f"₹{resistance * 1.02:.2f} (Above resistance)",
+                'target_1': f"₹{support - triangle_height:.2f} (Height down)",
+                'target_2': f"₹{support - (triangle_height * 1.5):.2f} (1.5x height down)",
+                'action': '🔻 SHORT on support breakdown with volume',
+                'rules': [
+                    '2-3 support touches',
+                    f'SHORT Entry: Below ₹{support:.2f}',
+                    'Volume surge required'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_symmetrical_triangle(self, lookback: int = 30) -> Dict:
+        """
+        Detect Symmetrical Triangle - Neutral pattern (can break either way).
+        
+        Pattern Characteristics:
+        - Converging trendlines (rising support, falling resistance)
+        - Volume declining during formation
+        - Breakout direction determines signal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 30:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        
+        highs = df['High'].values
+        lows = df['Low'].values
+        
+        # Resistance descending
+        resistance_slope = np.polyfit(range(len(highs)), highs, 1)[0]
+        # Support ascending
+        support_slope = np.polyfit(range(len(lows)), lows, 1)[0]
+        
+        if resistance_slope < -0.0005 and support_slope > 0.0005:
+            score += 0.4
+        
+        # Converging
+        early_range = df.head(10)['High'].max() - df.head(10)['Low'].min()
+        late_range = df.tail(10)['High'].max() - df.tail(10)['Low'].min()
+        
+        if late_range < early_range * 0.6:
+            score += 0.3
+        
+        # Volume declining
+        volume_trend = np.polyfit(range(len(df)), df['Volume'].values, 1)[0]
+        if volume_trend < 0:
+            score += 0.3
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            resistance = df['High'].max()
+            support = df['Low'].min()
+            triangle_height = resistance - support
+            
+            return {
+                'detected': True,
+                'pattern': 'Symmetrical Triangle',
+                'signal': 'NEUTRAL',
+                'confidence': 'MEDIUM',
+                'score': score,
+                'description': 'Coiling pattern. Breakout direction determines trade.',
+                'entry_point': f"₹{resistance * 1.02:.2f} (BUY) or ₹{support * 0.98:.2f} (SHORT)",
+                'stop_loss': f"Opposite side of triangle",
+                'target_1': f"₹{current_price + triangle_height:.2f} (UP) or ₹{current_price - triangle_height:.2f} (DOWN)",
+                'target_2': f"₹{current_price + (triangle_height * 1.5):.2f} (UP) or ₹{current_price - (triangle_height * 1.5):.2f} (DOWN)",
+                'action': '⚡ WAIT for breakout - BUY above resistance OR SHORT below support',
+                'rules': [
+                    'Wait for clear breakout',
+                    f'BUY: Above ₹{resistance:.2f} OR SHORT: Below ₹{support:.2f}',
+                    'Volume surge confirms direction'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_bull_flag(self, lookback: int = 25) -> Dict:
+        """
+        Detect Bull Flag - Bullish continuation pattern.
+        
+        Pattern Characteristics:
+        - Strong pole (sharp uptrend)
+        - Flag (slight downward drift or sideways)
+        - Parallel channel forming flag
+        - Breakout upward continuation
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 20:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        
+        # Identify pole (strong uptrend)
+        pole_length = min(10, len(df) // 2)
+        pole_data = df.head(pole_length)
+        pole_gain = (pole_data['Close'].iloc[-1] - pole_data['Close'].iloc[0]) / pole_data['Close'].iloc[0]
+        
+        if pole_gain > 0.10:  # Minimum 10% gain
+            score += 0.3
+        else:
+            return {'detected': False, 'score': 0}
+        
+        # Flag consolidation (slight downward or sideways)
+        flag_data = df.tail(len(df) - pole_length)
+        flag_slope = np.polyfit(range(len(flag_data)), flag_data['Close'].values, 1)[0]
+        
+        # Flag should be flat or slightly down (not up too much)
+        if flag_slope <= 0.001:
+            score += 0.3
+        
+        # Flag range tight
+        flag_range = (flag_data['High'].max() - flag_data['Low'].min()) / flag_data['Close'].mean()
+        if flag_range < 0.10:
+            score += 0.2
+        
+        # Volume lower in flag
+        pole_volume = pole_data['Volume'].mean()
+        flag_volume = flag_data['Volume'].mean()
+        
+        if flag_volume < pole_volume * 0.7:
+            score += 0.2
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            flag_high = flag_data['High'].max()
+            flag_low = flag_data['Low'].min()
+            pole_height = pole_data['Close'].iloc[-1] - pole_data['Close'].iloc[0]
+            
+            return {
+                'detected': True,
+                'pattern': 'Bull Flag',
+                'signal': 'BULLISH',
+                'confidence': 'HIGH' if score > 0.8 else 'MEDIUM',
+                'score': score,
+                'description': 'Bullish continuation. Brief pause before resuming uptrend.',
+                'entry_point': f"₹{flag_high * 1.01:.2f} (Breakout above flag)",
+                'stop_loss': f"₹{flag_low * 0.98:.2f} (Below flag)",
+                'target_1': f"₹{flag_high + pole_height:.2f} (Pole height projected)",
+                'target_2': f"₹{flag_high + (pole_height * 1.5):.2f} (1.5x pole)",
+                'action': 'BUY on breakout above flag with volume',
+                'rules': [
+                    f'Entry: Above ₹{flag_high:.2f}',
+                    f'Stop: Below ₹{flag_low:.2f}',
+                    'Volume surge confirms breakout'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_bear_flag(self, lookback: int = 25) -> Dict:
+        """
+        Detect Bear Flag - Bearish continuation pattern.
+        
+        Pattern Characteristics:
+        - Strong pole (sharp downtrend)
+        - Flag (slight upward drift or sideways)
+        - Parallel channel forming flag
+        - Breakdown continues downtrend = SHORT signal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 20:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        
+        # Identify pole (strong downtrend)
+        pole_length = min(10, len(df) // 2)
+        pole_data = df.head(pole_length)
+        pole_loss = (pole_data['Close'].iloc[-1] - pole_data['Close'].iloc[0]) / pole_data['Close'].iloc[0]
+        
+        if pole_loss < -0.10:  # Minimum 10% drop
+            score += 0.3
+        else:
+            return {'detected': False, 'score': 0}
+        
+        # Flag consolidation (slight upward or sideways)
+        flag_data = df.tail(len(df) - pole_length)
+        flag_slope = np.polyfit(range(len(flag_data)), flag_data['Close'].values, 1)[0]
+        
+        # Flag should be flat or slightly up (counter-trend bounce)
+        if flag_slope >= -0.001:
+            score += 0.3
+        
+        # Flag range tight
+        flag_range = (flag_data['High'].max() - flag_data['Low'].min()) / flag_data['Close'].mean()
+        if flag_range < 0.10:
+            score += 0.2
+        
+        # Volume lower in flag
+        pole_volume = pole_data['Volume'].mean()
+        flag_volume = flag_data['Volume'].mean()
+        
+        if flag_volume < pole_volume * 0.7:
+            score += 0.2
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            flag_high = flag_data['High'].max()
+            flag_low = flag_data['Low'].min()
+            pole_height = abs(pole_data['Close'].iloc[0] - pole_data['Close'].iloc[-1])
+            
+            return {
+                'detected': True,
+                'pattern': 'Bear Flag',
+                'signal': 'BEARISH',
+                'confidence': 'HIGH' if score > 0.8 else 'MEDIUM',
+                'score': score,
+                'description': 'Bearish continuation. Brief bounce before resuming downtrend.',
+                'entry_point': f"₹{flag_low * 0.99:.2f} (SHORT below flag)",
+                'stop_loss': f"₹{flag_high * 1.02:.2f} (Above flag)",
+                'target_1': f"₹{flag_low - pole_height:.2f} (Pole height down)",
+                'target_2': f"₹{flag_low - (pole_height * 1.5):.2f} (1.5x pole down)",
+                'action': '🔻 SHORT on breakdown below flag with volume',
+                'rules': [
+                    f'SHORT Entry: Below ₹{flag_low:.2f}',
+                    f'Stop: Above ₹{flag_high:.2f}',
+                    'Volume surge confirms breakdown'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_rising_wedge(self, lookback: int = 30) -> Dict:
+        """
+        Detect Rising Wedge - Bearish reversal pattern.
+        
+        Pattern Characteristics:
+        - Both trendlines rising
+        - Range narrowing (converging)
+        - Volume declining
+        - Downside breakdown = SHORT signal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 30:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        highs = df['High'].values
+        lows = df['Low'].values
+        
+        # Both trendlines rising
+        high_trend = np.polyfit(range(len(highs)), highs, 1)[0]
+        low_trend = np.polyfit(range(len(lows)), lows, 1)[0]
+        
+        if high_trend > 0 and low_trend > 0:
+            score += 0.3
+        
+        # Converging (range narrowing) - lower line rising faster
+        if low_trend > high_trend * 0.7:
+            score += 0.3
+        
+        # Volume declining
+        volume_trend = np.polyfit(range(len(df)), df['Volume'].values, 1)[0]
+        if volume_trend < 0:
+            score += 0.2
+        
+        # Near breakdown
+        current_price = df['Close'].iloc[-1]
+        lower_line = df['Low'].tail(10).min()
+        
+        if current_price < df['Close'].mean():
+            score += 0.2
+        
+        if score > 0.7:
+            upper_line = df['High'].max()
+            lower_line = df['Low'].min()
+            wedge_height = upper_line - lower_line
+            
+            return {
+                'detected': True,
+                'pattern': 'Rising Wedge',
+                'signal': 'BEARISH',
+                'confidence': 'MEDIUM',
+                'score': score,
+                'description': 'Bearish reversal. Buying pressure weakening despite rising price.',
+                'entry_point': f"₹{lower_line * 0.99:.2f} (SHORT below lower line)",
+                'stop_loss': f"₹{upper_line * 1.02:.2f} (Above upper line)",
+                'target_1': f"₹{lower_line - wedge_height:.2f} (Wedge height down)",
+                'target_2': f"₹{lower_line - (wedge_height * 1.5):.2f} (1.5x height down)",
+                'action': '🔻 SHORT on downside breakdown with volume',
+                'rules': [
+                    'Both lines rising but converging',
+                    f'SHORT Entry: Below ₹{lower_line:.2f}',
+                    f'Stop: Above ₹{upper_line:.2f}'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_pennant(self, lookback: int = 25) -> Dict:
+        """
+        Detect Pennant - Small symmetrical triangle after strong move.
+        
+        Pattern Characteristics:
+        - Strong directional move (pole)
+        - Small converging triangle (pennant)
+        - Very short duration (1-3 weeks)
+        - Continuation pattern
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 20:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        
+        # Identify pole (strong move)
+        pole_length = min(8, len(df) // 3)
+        pole_data = df.head(pole_length)
+        pole_move = (pole_data['Close'].iloc[-1] - pole_data['Close'].iloc[0]) / pole_data['Close'].iloc[0]
+        
+        is_bullish = pole_move > 0.08  # 8% up
+        is_bearish = pole_move < -0.08  # 8% down
+        
+        if is_bullish or is_bearish:
+            score += 0.3
+        else:
+            return {'detected': False, 'score': 0}
+        
+        # Pennant formation (small converging triangle)
+        pennant_data = df.tail(len(df) - pole_length)
+        
+        if len(pennant_data) < 8:
+            return {'detected': False, 'score': 0}
+        
+        # Converging pattern
+        early_range = pennant_data.head(5)['High'].max() - pennant_data.head(5)['Low'].min()
+        late_range = pennant_data.tail(5)['High'].max() - pennant_data.tail(5)['Low'].min()
+        
+        if late_range < early_range * 0.5:
+            score += 0.3
+        
+        # Small size relative to pole
+        pennant_range = (pennant_data['High'].max() - pennant_data['Low'].min())
+        pole_range = abs(pole_data['Close'].iloc[-1] - pole_data['Close'].iloc[0])
+        
+        if pennant_range < pole_range * 0.5:
+            score += 0.2
+        
+        # Volume declining in pennant
+        pole_volume = pole_data['Volume'].mean()
+        pennant_volume = pennant_data['Volume'].mean()
+        
+        if pennant_volume < pole_volume * 0.7:
+            score += 0.2
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            pennant_high = pennant_data['High'].max()
+            pennant_low = pennant_data['Low'].min()
+            
+            if is_bullish:
+                return {
+                    'detected': True,
+                    'pattern': 'Bullish Pennant',
+                    'signal': 'BULLISH',
+                    'confidence': 'HIGH' if score > 0.8 else 'MEDIUM',
+                    'score': score,
+                    'description': 'Bullish continuation. Brief consolidation before resuming uptrend.',
+                    'entry_point': f"₹{pennant_high * 1.01:.2f} (Breakout above pennant)",
+                    'stop_loss': f"₹{pennant_low * 0.98:.2f} (Below pennant)",
+                    'target_1': f"₹{pennant_high + pole_range:.2f} (Pole projected)",
+                    'target_2': f"₹{pennant_high + (pole_range * 1.5):.2f} (1.5x pole)",
+                    'action': 'BUY on upside breakout with volume',
+                    'rules': [
+                        f'Entry: Above ₹{pennant_high:.2f}',
+                        'Quick move expected',
+                        'Volume surge confirms'
+                    ]
+                }
+            else:  # Bearish
+                return {
+                    'detected': True,
+                    'pattern': 'Bearish Pennant',
+                    'signal': 'BEARISH',
+                    'confidence': 'HIGH' if score > 0.8 else 'MEDIUM',
+                    'score': score,
+                    'description': 'Bearish continuation. Brief consolidation before resuming downtrend.',
+                    'entry_point': f"₹{pennant_low * 0.99:.2f} (SHORT below pennant)",
+                    'stop_loss': f"₹{pennant_high * 1.02:.2f} (Above pennant)",
+                    'target_1': f"₹{pennant_low - pole_range:.2f} (Pole down)",
+                    'target_2': f"₹{pennant_low - (pole_range * 1.5):.2f} (1.5x pole down)",
+                    'action': '🔻 SHORT on downside breakdown with volume',
+                    'rules': [
+                        f'SHORT Entry: Below ₹{pennant_low:.2f}',
+                        'Quick move expected',
+                        'Volume surge confirms'
+                    ]
+                }
+        
+        return {'detected': False, 'score': score}
+    
+    # ============================================================================
     # QULLAMAGGIE SWING PATTERNS
     # ============================================================================
     
@@ -689,12 +1311,12 @@ class PatternDetector:
                 'confidence': 'MEDIUM',
                 'score': score,
                 'description': 'Vertical move extended from EMAs. "Wait for first crack"',
-                'action': 'Short on first red day, target EMA reversion',
+                'action': '🔻 SHORT on first red day, target EMA reversion',
                 'rules': [
                     '>30% move in 2-3 weeks',
                     'Extended from 10 EMA >15%',
                     'Volume climax',
-                    'First red day'
+                    'First red day triggers SHORT'
                 ]
             }
         
@@ -850,6 +1472,34 @@ class PatternDetector:
         
         return patterns
     
+    def detect_all_classic_patterns(self) -> List[Dict]:
+        """
+        Detect all classic chart patterns (including bearish patterns).
+        
+        Returns:
+            List of detected patterns with full details
+        """
+        patterns = []
+        
+        # Run all classic pattern detections
+        detectors = [
+            self.detect_head_and_shoulders,
+            self.detect_double_top,
+            self.detect_descending_triangle,
+            self.detect_symmetrical_triangle,
+            self.detect_bull_flag,
+            self.detect_bear_flag,
+            self.detect_rising_wedge,
+            self.detect_pennant
+        ]
+        
+        for detector in detectors:
+            result = detector()
+            if result.get('detected', False):
+                patterns.append(result)
+        
+        return patterns
+    
     def detect_all_swing_patterns(self) -> List[Dict]:
         """
         Detect all Qullamaggie swing patterns.
@@ -882,10 +1532,15 @@ class PatternDetector:
         Returns:
             Dictionary with pattern categories and detected patterns
         """
+        zanger = self.detect_all_zanger_patterns()
+        classic = self.detect_all_classic_patterns()
+        swing = self.detect_all_swing_patterns()
+        
         return {
-            'zanger_patterns': self.detect_all_zanger_patterns(),
-            'swing_patterns': self.detect_all_swing_patterns(),
-            'all_patterns': self.detect_all_zanger_patterns() + self.detect_all_swing_patterns()
+            'zanger_patterns': zanger,
+            'classic_patterns': classic,
+            'swing_patterns': swing,
+            'all_patterns': zanger + classic + swing
         }
 
 
@@ -973,3 +1628,7 @@ if __name__ == "__main__":
     print("Pattern Detector Module - Ready for import")
     print("Available classes: PatternDetector")
     print("Available functions: format_pattern_summary, get_pattern_statistics")
+    print("\nTotal Patterns: 19")
+    print("- Zanger: 6")
+    print("- Classic: 8 (including bearish with SHORT signals)")
+    print("- Swing: 5")
