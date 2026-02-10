@@ -433,7 +433,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 x1=box_end,
                 y0=box_bottom,
                 y1=box_top,
-                line=dict(color='black', width=1.5, dash='dash'),
+                line=dict(color='black', width=1, dash='dash'),
                 fillcolor='rgba(65, 105, 225, 0.1)',
                 row=1, col=1
             )
@@ -463,7 +463,7 @@ def draw_patterns_on_chart(fig, patterns, df):
             fig.add_annotation(
                 x=box_start + (box_end - box_start) / 2,
                 y=(box_top + box_bottom) / 2,
-                text="<b>DB</b>",
+                text="<b> </b>",
                 showarrow=False,
                 font=dict(color='#4169E1', size=14, family='Arial Black'),
                 bgcolor='rgba(255, 255, 255, 0.8)',
@@ -1020,7 +1020,7 @@ def main():
                                 
                                 # Special display for Darvas Box
                                 if 'Darvas' in pattern_name:
-                                    st.info("📦 **Darvas Box** = Nicolas Darvas's box theory (How I Made $2M in the Stock Market)")
+                                    st.info("📦 **Darvas Box** = Nicolas Darvas's box theory")
                                     
                                     if 'box_data' in pattern:
                                         box = pattern['box_data']
@@ -1036,7 +1036,7 @@ def main():
                                 
                                 # Special display for CANSLIM
                                 if 'CANSLIM' in pattern_name:
-                                    st.info("💎 **CANSLIM** = Growth stock methodology by William O'Neil (Investor's Business Daily)")
+                                    st.info("💎 **CANSLIM** = Growth stock methodology by William O'Neil")
                                     
                                     # Display CANSLIM score
                                     canslim_score = pattern.get('score', 0) * 100
