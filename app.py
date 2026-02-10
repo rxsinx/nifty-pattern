@@ -464,7 +464,6 @@ def draw_patterns_on_chart(fig, patterns, df):
                 x=box_start + (box_end - box_start) / 2,
                 y=(box_top + box_bottom) / 2,
                 showarrow=False,
-                font=dict(color='#4169E1', size=14, family='Arial Black'),
                 bgcolor='rgba(255, 255, 255, 0.8)',
                 bordercolor='#4169E1',
                 borderwidth=2,
