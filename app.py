@@ -459,17 +459,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 row=1, col=1
             )
             
-            # Add "DARVAS BOX" label
-            fig.add_annotation(
-                x=box_start + (box_end - box_start) / 2,
-                y=(box_top + box_bottom) / 2,
-                text="D"
-                showarrow=False,
-                bgcolor='rgba(255, 255, 255, 0.8)',
-                bordercolor='#4169E1',
-                borderwidth=2,
-                row=1, col=1
-            )
+           
         
         # Draw Entry Point
         if entry_price:
