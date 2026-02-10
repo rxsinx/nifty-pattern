@@ -463,7 +463,7 @@ def draw_patterns_on_chart(fig, patterns, df):
             fig.add_annotation(
                 x=box_start + (box_end - box_start) / 2,
                 y=(box_top + box_bottom) / 2,
-                text="<b> </b>",
+                text="",
                 showarrow=False,
                 font=dict(color='#4169E1', size=14, family='Arial Black'),
                 bgcolor='rgba(255, 255, 255, 0.8)',
