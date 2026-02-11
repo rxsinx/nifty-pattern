@@ -800,7 +800,7 @@ def main():
         
         symbol = st.text_input(
             "Enter Stock Symbol (NSE)",
-            value="RELIANCE",
+            value="",
             help="Enter NSE symbol without .NS suffix (e.g., RELIANCE, TCS, INFY)"
         )
         
