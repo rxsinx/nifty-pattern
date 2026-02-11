@@ -1986,6 +1986,843 @@ class PatternDetector:
         return {'detected': False, 'score': final_score}
     
     # ============================================================================
+    # ADDITIONAL ADVANCED PATTERNS
+    # ============================================================================
+    
+    def detect_inverse_head_and_shoulders(self, lookback: int = 60) -> Dict:
+        """
+        Detect Inverse Head and Shoulders - Bullish reversal pattern.
+        
+        Pattern Characteristics:
+        - Left shoulder (low), deeper head (lower low), right shoulder (low)
+        - Neckline connects the two peaks between shoulders and head
+        - Volume increasing through pattern (especially on right shoulder)
+        - Breakout above neckline = BUY signal
+        - Opposite of regular Head and Shoulders
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 50:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        
+        # Find local minima (troughs) and maxima (peaks)
+        troughs = []
+        peaks = []
+        
+        for i in range(5, len(prices) - 5):
+            if prices[i] < min(prices[i-5:i]) and prices[i] < min(prices[i+1:i+6]):
+                troughs.append((i, prices[i]))
+            if prices[i] > max(prices[i-5:i]) and prices[i] > max(prices[i+1:i+6]):
+                peaks.append((i, prices[i]))
+        
+        # Need at least 3 troughs (shoulders + head) and 2 peaks (neckline points)
+        if len(troughs) >= 3 and len(peaks) >= 2:
+            # Check last 3 troughs for Inverse H&S pattern
+            left_shoulder = troughs[-3]
+            head = troughs[-2]
+            right_shoulder = troughs[-1]
+            
+            # Head should be LOWER than both shoulders (deeper)
+            if head[1] < left_shoulder[1] and head[1] < right_shoulder[1]:
+                score += 0.3
+                
+                # Shoulders should be roughly equal (within 5%)
+                shoulder_diff = abs(left_shoulder[1] - right_shoulder[1]) / left_shoulder[1]
+                if shoulder_diff < 0.05:
+                    score += 0.2
+                
+                # Neckline (resistance level connecting peaks)
+                if len(peaks) >= 2:
+                    peak1 = peaks[-2]
+                    peak2 = peaks[-1]
+                    neckline = (peak1[1] + peak2[1]) / 2
+                    
+                    # Current price near or above neckline
+                    current_price = prices[-1]
+                    if current_price > neckline * 0.98:
+                        score += 0.3
+                    
+                    # Volume increasing (bullish confirmation)
+                    if df['Volume'].iloc[-10:].mean() > df['Volume'].iloc[-30:-10].mean():
+                        score += 0.2
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            neckline = df['High'].tail(30).max()
+            head_price = df['Low'].tail(40).min()
+            pattern_height = neckline - head_price
+            
+            return {
+                'detected': True,
+                'pattern': 'Inverse Head and Shoulders',
+                'signal': 'BULLISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': 'Classic bullish reversal. Downtrend exhaustion turning bullish.',
+                'entry_point': f"₹{neckline * 1.02:.2f} (BUY above neckline)",
+                'stop_loss': f"₹{head_price * 0.98:.2f} (Below head)",
+                'target_1': f"₹{neckline + pattern_height:.2f} (Height projected up)",
+                'target_2': f"₹{neckline + (pattern_height * 1.5):.2f} (1.5x height up)",
+                'action': 'BUY on neckline breakout with volume',
+                'rules': [
+                    'Wait for neckline break',
+                    f'BUY Entry: Above ₹{neckline:.2f}',
+                    f'Stop: Below ₹{head_price:.2f}',
+                    'Volume surge on breakout',
+                    'Pattern confirms trend reversal'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_triple_top(self, lookback: int = 60) -> Dict:
+        """
+        Detect Triple Top - Strong bearish reversal pattern.
+        
+        Pattern Characteristics:
+        - Three peaks at similar price level (within 3%)
+        - More reliable than double top
+        - Troughs between peaks form support (neckline)
+        - Breakdown below neckline = SHORT signal
+        - High probability reversal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 50:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        
+        # Find local maxima (peaks)
+        maxima_indices = []
+        for i in range(3, len(prices) - 3):
+            if prices[i] > max(prices[i-3:i]) and prices[i] > max(prices[i+1:i+4]):
+                maxima_indices.append(i)
+        
+        if len(maxima_indices) >= 3:
+            # Check last 3 peaks
+            peak1_idx = maxima_indices[-3]
+            peak2_idx = maxima_indices[-2]
+            peak3_idx = maxima_indices[-1]
+            
+            peak1_price = prices[peak1_idx]
+            peak2_price = prices[peak2_idx]
+            peak3_price = prices[peak3_idx]
+            
+            # All three peaks should be within 3% of each other
+            avg_peak = (peak1_price + peak2_price + peak3_price) / 3
+            
+            peak1_diff = abs(peak1_price - avg_peak) / avg_peak
+            peak2_diff = abs(peak2_price - avg_peak) / avg_peak
+            peak3_diff = abs(peak3_price - avg_peak) / avg_peak
+            
+            if peak1_diff < 0.03 and peak2_diff < 0.03 and peak3_diff < 0.03:
+                score += 0.4
+                
+                # Find troughs between peaks
+                trough1_section = prices[peak1_idx:peak2_idx]
+                trough2_section = prices[peak2_idx:peak3_idx]
+                
+                if len(trough1_section) > 0 and len(trough2_section) > 0:
+                    trough1 = np.min(trough1_section)
+                    trough2 = np.min(trough2_section)
+                    neckline = (trough1 + trough2) / 2
+                    
+                    # Volume declining through pattern
+                    vol1 = df['Volume'].iloc[peak1_idx]
+                    vol2 = df['Volume'].iloc[peak2_idx]
+                    vol3 = df['Volume'].iloc[peak3_idx]
+                    
+                    if vol3 < vol2 and vol2 < vol1:
+                        score += 0.2
+                    
+                    # Current price near or below neckline
+                    current_price = prices[-1]
+                    if current_price < neckline * 1.02:
+                        score += 0.3
+                    
+                    # Volume increase on breakdown
+                    recent_volume = df['Volume'].tail(3).mean()
+                    avg_volume = df['Volume'].mean()
+                    if recent_volume > avg_volume * 1.3:
+                        score += 0.1
+        
+        if score > 0.7:
+            top = df['High'].max()
+            neckline = df['Low'].tail(40).min()
+            pattern_height = top - neckline
+            
+            return {
+                'detected': True,
+                'pattern': 'Triple Top',
+                'signal': 'BEARISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': 'Strong bearish reversal. Three failed attempts at resistance.',
+                'entry_point': f"₹{neckline * 0.98:.2f} (SHORT below neckline)",
+                'stop_loss': f"₹{top * 1.02:.2f} (Above triple top)",
+                'target_1': f"₹{neckline - pattern_height:.2f} (Height down)",
+                'target_2': f"₹{neckline - (pattern_height * 1.5):.2f} (1.5x height down)",
+                'action': '🔻 SHORT on neckline breakdown with volume',
+                'rules': [
+                    'Three tops within 3% range',
+                    f'SHORT Entry: Below ₹{neckline:.2f}',
+                    f'Stop: Above ₹{top:.2f}',
+                    'Higher reliability than double top',
+                    'Volume confirms breakdown'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_triple_bottom(self, lookback: int = 60) -> Dict:
+        """
+        Detect Triple Bottom - Strong bullish reversal pattern.
+        
+        Pattern Characteristics:
+        - Three bottoms at similar price level (within 3%)
+        - More reliable than double bottom
+        - Peaks between bottoms form resistance (neckline)
+        - Breakout above neckline = BUY signal
+        - High probability reversal
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 50:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        
+        # Find local minima (troughs)
+        minima_indices = []
+        for i in range(3, len(prices) - 3):
+            if prices[i] < min(prices[i-3:i]) and prices[i] < min(prices[i+1:i+4]):
+                minima_indices.append(i)
+        
+        if len(minima_indices) >= 3:
+            # Check last 3 bottoms
+            trough1_idx = minima_indices[-3]
+            trough2_idx = minima_indices[-2]
+            trough3_idx = minima_indices[-1]
+            
+            trough1_price = prices[trough1_idx]
+            trough2_price = prices[trough2_idx]
+            trough3_price = prices[trough3_idx]
+            
+            # All three bottoms should be within 3% of each other
+            avg_trough = (trough1_price + trough2_price + trough3_price) / 3
+            
+            trough1_diff = abs(trough1_price - avg_trough) / avg_trough
+            trough2_diff = abs(trough2_price - avg_trough) / avg_trough
+            trough3_diff = abs(trough3_price - avg_trough) / avg_trough
+            
+            if trough1_diff < 0.03 and trough2_diff < 0.03 and trough3_diff < 0.03:
+                score += 0.4
+                
+                # Find peaks between troughs
+                peak1_section = prices[trough1_idx:trough2_idx]
+                peak2_section = prices[trough2_idx:trough3_idx]
+                
+                if len(peak1_section) > 0 and len(peak2_section) > 0:
+                    peak1 = np.max(peak1_section)
+                    peak2 = np.max(peak2_section)
+                    neckline = (peak1 + peak2) / 2
+                    
+                    # Volume increasing through pattern (bullish)
+                    vol1 = df['Volume'].iloc[trough1_idx]
+                    vol2 = df['Volume'].iloc[trough2_idx]
+                    vol3 = df['Volume'].iloc[trough3_idx]
+                    
+                    if vol3 > vol2 or vol2 > vol1:
+                        score += 0.2
+                    
+                    # Current price near or above neckline
+                    current_price = prices[-1]
+                    if current_price > neckline * 0.98:
+                        score += 0.3
+                    
+                    # Volume increase on breakout
+                    recent_volume = df['Volume'].tail(3).mean()
+                    avg_volume = df['Volume'].mean()
+                    if recent_volume > avg_volume * 1.3:
+                        score += 0.1
+        
+        if score > 0.7:
+            bottom = df['Low'].min()
+            neckline = df['High'].tail(40).max()
+            pattern_height = neckline - bottom
+            
+            return {
+                'detected': True,
+                'pattern': 'Triple Bottom',
+                'signal': 'BULLISH',
+                'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                'score': score,
+                'description': 'Strong bullish reversal. Three successful tests of support.',
+                'entry_point': f"₹{neckline * 1.02:.2f} (BUY above neckline)",
+                'stop_loss': f"₹{bottom * 0.98:.2f} (Below triple bottom)",
+                'target_1': f"₹{neckline + pattern_height:.2f} (Height up)",
+                'target_2': f"₹{neckline + (pattern_height * 1.5):.2f} (1.5x height up)",
+                'action': 'BUY on neckline breakout with volume',
+                'rules': [
+                    'Three bottoms within 3% range',
+                    f'BUY Entry: Above ₹{neckline:.2f}',
+                    f'Stop: Below ₹{bottom:.2f}',
+                    'Higher reliability than double bottom',
+                    'Volume confirms breakout'
+                ]
+            }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_order_blocks(self, lookback: int = 50) -> Dict:
+        """
+        Detect Order Blocks - Smart Money / Institutional zones.
+        
+        Pattern Characteristics:
+        - Last bullish/bearish candle before strong move
+        - Represents institutional order accumulation
+        - Price often returns to test these zones
+        - High/Low of the block = support/resistance
+        - Used by ICT (Inner Circle Trader) methodology
+        
+        Types:
+        - Bullish Order Block: Last red candle before strong up move
+        - Bearish Order Block: Last green candle before strong down move
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 20:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        bullish_blocks = []
+        bearish_blocks = []
+        
+        # Scan for order blocks
+        for i in range(10, len(df) - 5):
+            current_candle = df.iloc[i]
+            next_5_candles = df.iloc[i+1:i+6]
+            
+            # Bullish Order Block: Last red candle before strong up move
+            if current_candle['Close'] < current_candle['Open']:  # Red candle
+                # Check if next 5 candles show strong upward movement
+                future_gain = (next_5_candles['Close'].max() - current_candle['Close']) / current_candle['Close']
+                
+                if future_gain > 0.05:  # 5% up move after red candle
+                    bullish_blocks.append({
+                        'index': i,
+                        'high': current_candle['High'],
+                        'low': current_candle['Low'],
+                        'close': current_candle['Close'],
+                        'type': 'BULLISH',
+                        'strength': future_gain
+                    })
+            
+            # Bearish Order Block: Last green candle before strong down move
+            elif current_candle['Close'] > current_candle['Open']:  # Green candle
+                # Check if next 5 candles show strong downward movement
+                future_loss = (current_candle['Close'] - next_5_candles['Close'].min()) / current_candle['Close']
+                
+                if future_loss > 0.05:  # 5% down move after green candle
+                    bearish_blocks.append({
+                        'index': i,
+                        'high': current_candle['High'],
+                        'low': current_candle['Low'],
+                        'close': current_candle['Close'],
+                        'type': 'BEARISH',
+                        'strength': future_loss
+                    })
+        
+        # Analyze most recent and strongest order blocks
+        current_price = df['Close'].iloc[-1]
+        
+        # Find relevant order blocks near current price
+        relevant_bullish = [b for b in bullish_blocks if abs(current_price - b['low']) / current_price < 0.10]
+        relevant_bearish = [b for b in bearish_blocks if abs(current_price - b['high']) / current_price < 0.10]
+        
+        if relevant_bullish:
+            # Sort by strength and recency
+            relevant_bullish.sort(key=lambda x: (x['strength'], x['index']), reverse=True)
+            strongest_bullish = relevant_bullish[0]
+            
+            # Check if price is near the bullish order block
+            distance_to_block = abs(current_price - strongest_bullish['low']) / current_price
+            
+            if distance_to_block < 0.03:  # Within 3%
+                score += 0.5
+            elif distance_to_block < 0.05:  # Within 5%
+                score += 0.3
+            
+            # Volume confirmation
+            block_index = strongest_bullish['index']
+            if block_index < len(df) - 1:
+                block_volume = df['Volume'].iloc[block_index]
+                avg_volume = df['Volume'].mean()
+                
+                if block_volume > avg_volume * 1.5:
+                    score += 0.3
+        
+        if relevant_bearish:
+            # Sort by strength and recency
+            relevant_bearish.sort(key=lambda x: (x['strength'], x['index']), reverse=True)
+            strongest_bearish = relevant_bearish[0]
+            
+            # Check if price is near the bearish order block
+            distance_to_block = abs(current_price - strongest_bearish['high']) / current_price
+            
+            if distance_to_block < 0.03:  # Within 3%
+                score += 0.5
+            elif distance_to_block < 0.05:  # Within 5%
+                score += 0.3
+            
+            # Volume confirmation
+            block_index = strongest_bearish['index']
+            if block_index < len(df) - 1:
+                block_volume = df['Volume'].iloc[block_index]
+                avg_volume = df['Volume'].mean()
+                
+                if block_volume > avg_volume * 1.5:
+                    score += 0.3
+        
+        # Determine which signal to return
+        if score > 0.6:
+            if relevant_bullish and (not relevant_bearish or relevant_bullish[0]['index'] > relevant_bearish[0]['index']):
+                # Bullish order block is more recent/relevant
+                block = relevant_bullish[0]
+                
+                return {
+                    'detected': True,
+                    'pattern': 'Bullish Order Block',
+                    'signal': 'BULLISH',
+                    'confidence': 'HIGH' if score > 0.8 else 'MEDIUM',
+                    'score': score,
+                    'description': 'Smart Money accumulation zone. Institutional buying detected.',
+                    'entry_point': f"₹{block['low'] * 1.005:.2f} (Buy at order block low)",
+                    'stop_loss': f"₹{block['low'] * 0.98:.2f} (Below order block)",
+                    'target_1': f"₹{current_price * 1.08:.2f} (8% gain)",
+                    'target_2': f"₹{current_price * 1.15:.2f} (15% gain)",
+                    'action': 'BUY when price returns to order block zone',
+                    'order_block_data': {
+                        'high': block['high'],
+                        'low': block['low'],
+                        'type': 'BULLISH'
+                    },
+                    'rules': [
+                        'Order block = institutional accumulation',
+                        f'Support zone: ₹{block["low"]:.2f} - ₹{block["high"]:.2f}',
+                        'Enter on retest of block',
+                        'Stop below order block',
+                        'ICT methodology: Smart Money Concepts'
+                    ]
+                }
+            
+            elif relevant_bearish:
+                # Bearish order block
+                block = relevant_bearish[0]
+                
+                return {
+                    'detected': True,
+                    'pattern': 'Bearish Order Block',
+                    'signal': 'BEARISH',
+                    'confidence': 'HIGH' if score > 0.8 else 'MEDIUM',
+                    'score': score,
+                    'description': 'Smart Money distribution zone. Institutional selling detected.',
+                    'entry_point': f"₹{block['high'] * 0.995:.2f} (SHORT at order block high)",
+                    'stop_loss': f"₹{block['high'] * 1.02:.2f} (Above order block)",
+                    'target_1': f"₹{current_price * 0.92:.2f} (8% decline)",
+                    'target_2': f"₹{current_price * 0.85:.2f} (15% decline)",
+                    'action': '🔻 SHORT when price returns to order block zone',
+                    'order_block_data': {
+                        'high': block['high'],
+                        'low': block['low'],
+                        'type': 'BEARISH'
+                    },
+                    'rules': [
+                        'Order block = institutional distribution',
+                        f'Resistance zone: ₹{block["low"]:.2f} - ₹{block["high"]:.2f}',
+                        'Enter on retest of block',
+                        'Stop above order block',
+                        'ICT methodology: Smart Money Concepts'
+                    ]
+                }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_elliott_wave(self, lookback: int = 100) -> Dict:
+        """
+        Detect Elliott Wave Pattern - Ralph Nelson Elliott's wave theory.
+        
+        Pattern Characteristics:
+        - 5-wave impulse sequence (1-2-3-4-5) followed by 3-wave correction (A-B-C)
+        - Wave 3 is never the shortest
+        - Wave 2 never retraces more than 100% of Wave 1
+        - Wave 4 does not overlap Wave 1 price territory
+        - Wave 5 often shows divergence
+        
+        Simplified Detection:
+        - Identify 5 distinct price swings in trend direction
+        - Validate wave relationships
+        - Detect completion of Wave 5 or correction
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 60:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        prices = df['Close'].values
+        
+        # Find significant peaks and troughs
+        swings = []
+        
+        for i in range(5, len(prices) - 5):
+            # Peak detection
+            if prices[i] == max(prices[i-5:i+6]):
+                swings.append(('peak', i, prices[i]))
+            # Trough detection
+            elif prices[i] == min(prices[i-5:i+6]):
+                swings.append(('trough', i, prices[i]))
+        
+        # Need at least 9 swings for 5-wave impulse + ABC correction
+        # Or at least 5 swings for just impulse wave
+        if len(swings) >= 9:
+            # Analyze for complete pattern (5 waves + ABC)
+            # Check last 9 swings for Elliott pattern
+            
+            # Simplified: Look for alternating pattern
+            pattern_valid = True
+            for i in range(len(swings) - 1):
+                if swings[i][0] == swings[i+1][0]:  # Same type in sequence
+                    pattern_valid = False
+                    break
+            
+            if pattern_valid and len(swings) >= 9:
+                # Extract potential waves (simplified)
+                # In a bullish pattern: trough-peak-trough-peak-trough-peak-trough-peak-trough
+                
+                # Check for bullish impulse (starting with trough)
+                if swings[-9][0] == 'trough':
+                    wave1_start = swings[-9][2]
+                    wave1_end = swings[-8][2]
+                    wave2_end = swings[-7][2]
+                    wave3_end = swings[-6][2]
+                    wave4_end = swings[-5][2]
+                    wave5_end = swings[-4][2]
+                    
+                    wave1_height = wave1_end - wave1_start
+                    wave2_retrace = wave1_end - wave2_end
+                    wave3_height = wave3_end - wave2_end
+                    wave4_retrace = wave3_end - wave4_end
+                    wave5_height = wave5_end - wave4_end
+                    
+                    # Elliott Wave Rules:
+                    # 1. Wave 2 never retraces more than 100% of Wave 1
+                    if wave2_retrace < wave1_height:
+                        score += 0.2
+                    
+                    # 2. Wave 3 is never the shortest
+                    if wave3_height >= wave1_height and wave3_height >= wave5_height:
+                        score += 0.2
+                    
+                    # 3. Wave 4 does not overlap Wave 1
+                    if wave4_end > wave1_end:
+                        score += 0.2
+                    
+                    # 4. Wave 3 usually extends (is longest)
+                    if wave3_height > wave1_height and wave3_height > wave5_height:
+                        score += 0.1
+                    
+                    # 5. Check if we're at Wave 5 completion (potential reversal)
+                    current_price = prices[-1]
+                    if abs(current_price - wave5_end) / wave5_end < 0.05:
+                        score += 0.2
+                        
+                        # Volume divergence at Wave 5
+                        wave5_idx = swings[-4][1]
+                        wave3_idx = swings[-6][1]
+                        
+                        if wave5_idx < len(df) and wave3_idx < len(df):
+                            vol_wave5 = df['Volume'].iloc[wave5_idx]
+                            vol_wave3 = df['Volume'].iloc[wave3_idx]
+                            
+                            if vol_wave5 < vol_wave3:  # Divergence
+                                score += 0.1
+        
+        elif len(swings) >= 5:
+            # Check for impulse wave only (5 waves)
+            if swings[-5][0] == 'trough':  # Bullish impulse
+                score += 0.3
+        
+        if score > 0.7:
+            current_price = df['Close'].iloc[-1]
+            
+            # Determine wave position
+            wave_position = "Wave 5 completion" if len(swings) >= 9 else "Impulse wave detected"
+            
+            # For completed Wave 5, expect ABC correction
+            if len(swings) >= 9:
+                wave5_price = swings[-4][2]
+                wave4_price = swings[-5][2]
+                
+                # ABC correction targets
+                correction_38 = wave5_price - (wave5_price - wave4_price) * 0.382
+                correction_50 = wave5_price - (wave5_price - wave4_price) * 0.50
+                correction_62 = wave5_price - (wave5_price - wave4_price) * 0.618
+                
+                return {
+                    'detected': True,
+                    'pattern': 'Elliott Wave (5-3 Pattern)',
+                    'signal': 'NEUTRAL',  # Can be bullish or bearish depending on position
+                    'confidence': 'MEDIUM',
+                    'score': score,
+                    'description': f'{wave_position}. 5-wave impulse complete, expect 3-wave correction.',
+                    'entry_point': f"₹{correction_50:.2f} (Enter at 50% correction - Wave C target)",
+                    'stop_loss': f"₹{correction_62 * 0.98:.2f} (Below 61.8% correction)",
+                    'target_1': f"₹{wave5_price * 1.10:.2f} (Next impulse wave)",
+                    'target_2': f"₹{wave5_price * 1.20:.2f} (Extended target)",
+                    'action': 'WAIT for ABC correction, then BUY at Wave C completion',
+                    'elliott_data': {
+                        'wave_position': wave_position,
+                        'correction_levels': {
+                            '38.2%': correction_38,
+                            '50%': correction_50,
+                            '61.8%': correction_62
+                        }
+                    },
+                    'rules': [
+                        'Elliott Wave: 5-3 pattern (5 impulse + 3 correction)',
+                        f'Wave 5 complete at ₹{wave5_price:.2f}',
+                        'Expect ABC correction now',
+                        f'Buy at C wave: ₹{correction_50:.2f} (50% retracement)',
+                        'Wave 3 never shortest',
+                        'Wave 4 never overlaps Wave 1',
+                        'Professional institutional pattern'
+                    ]
+                }
+            else:
+                # Mid-impulse wave
+                return {
+                    'detected': True,
+                    'pattern': 'Elliott Wave (Impulse)',
+                    'signal': 'BULLISH',
+                    'confidence': 'MEDIUM',
+                    'score': score,
+                    'description': 'Elliott impulse wave in progress. Continuation expected.',
+                    'entry_point': f"₹{current_price * 1.02:.2f} (Current wave continuation)",
+                    'stop_loss': f"₹{current_price * 0.95:.2f} (Below recent low)",
+                    'target_1': f"₹{current_price * 1.15:.2f} (Wave extension)",
+                    'target_2': f"₹{current_price * 1.30:.2f} (Full impulse target)",
+                    'action': 'BUY on pullbacks within impulse wave',
+                    'rules': [
+                        'Elliott impulse wave detected',
+                        'Trend continuation expected',
+                        'Wait for Wave 2/4 pullbacks to enter',
+                        'Target Wave 5 completion'
+                    ]
+                }
+        
+        return {'detected': False, 'score': score}
+    
+    def detect_mean_reversion(self, lookback: int = 50) -> Dict:
+        """
+        Detect Mean Reversion Setup - Statistical trading strategy.
+        
+        Pattern Characteristics:
+        - Price extended from moving average (2+ standard deviations)
+        - Bollinger Bands squeeze or extreme stretch
+        - RSI oversold (<30) or overbought (>70)
+        - Volume spike on exhaustion
+        - Reversion to mean expected
+        
+        Types:
+        - Bullish Reversion: Oversold, far below mean
+        - Bearish Reversion: Overbought, far above mean
+        
+        Strategy:
+        - Enter when price is 2+ standard deviations from mean
+        - Exit at mean (moving average)
+        - Works best in ranging/sideways markets
+        """
+        df = self.data.tail(lookback).copy()
+        if len(df) < 30:
+            return {'detected': False, 'score': 0}
+        
+        score = 0
+        current_price = df['Close'].iloc[-1]
+        
+        # Calculate statistical measures
+        sma_20 = df['Close'].tail(20).mean()
+        std_20 = df['Close'].tail(20).std()
+        
+        # Bollinger Bands (if available, otherwise calculate)
+        if 'BB_High' in df.columns and 'BB_Low' in df.columns and 'BB_Mid' in df.columns:
+            bb_upper = df['BB_High'].iloc[-1]
+            bb_lower = df['BB_Low'].iloc[-1]
+            bb_mid = df['BB_Mid'].iloc[-1]
+        else:
+            bb_upper = sma_20 + (2 * std_20)
+            bb_lower = sma_20 - (2 * std_20)
+            bb_mid = sma_20
+        
+        # Calculate distance from mean in standard deviations
+        distance_from_mean = (current_price - sma_20) / std_20 if std_20 > 0 else 0
+        
+        # RSI (if available)
+        rsi = df['RSI'].iloc[-1] if 'RSI' in df.columns else 50
+        
+        # Determine if bullish or bearish reversion setup
+        is_bullish_reversion = False
+        is_bearish_reversion = False
+        
+        # Bullish Mean Reversion (Oversold)
+        if distance_from_mean < -1.5:  # 1.5+ std below mean
+            is_bullish_reversion = True
+            score += 0.3
+            
+            # Beyond 2 std is stronger
+            if distance_from_mean < -2.0:
+                score += 0.2
+            
+            # Price below lower Bollinger Band
+            if current_price < bb_lower:
+                score += 0.2
+            
+            # RSI oversold
+            if rsi < 30:
+                score += 0.2
+            elif rsi < 40:
+                score += 0.1
+            
+            # Volume spike (panic selling)
+            recent_volume = df['Volume'].tail(3).mean()
+            avg_volume = df['Volume'].mean()
+            
+            if recent_volume > avg_volume * 1.5:
+                score += 0.1
+        
+        # Bearish Mean Reversion (Overbought)
+        elif distance_from_mean > 1.5:  # 1.5+ std above mean
+            is_bearish_reversion = True
+            score += 0.3
+            
+            # Beyond 2 std is stronger
+            if distance_from_mean > 2.0:
+                score += 0.2
+            
+            # Price above upper Bollinger Band
+            if current_price > bb_upper:
+                score += 0.2
+            
+            # RSI overbought
+            if rsi > 70:
+                score += 0.2
+            elif rsi > 60:
+                score += 0.1
+            
+            # Volume spike (buying exhaustion)
+            recent_volume = df['Volume'].tail(3).mean()
+            avg_volume = df['Volume'].mean()
+            
+            if recent_volume > avg_volume * 1.5:
+                score += 0.1
+        
+        # Additional confirmation: Market in range (not trending)
+        # Check if price has been oscillating
+        highs_20 = df['High'].tail(20)
+        lows_20 = df['Low'].tail(20)
+        range_pct = (highs_20.max() - lows_20.min()) / sma_20
+        
+        # Prefer mean reversion in ranging markets (not strong trends)
+        if 0.10 < range_pct < 0.30:  # 10-30% range
+            score += 0.1
+        
+        if score > 0.7:
+            # Bullish Reversion Setup
+            if is_bullish_reversion:
+                target_mean = sma_20
+                stop_loss = current_price * 0.95  # 5% hard stop
+                
+                # Calculate expected move back to mean
+                reversion_gain = (target_mean - current_price) / current_price
+                
+                return {
+                    'detected': True,
+                    'pattern': 'Mean Reversion (Bullish)',
+                    'signal': 'BULLISH',
+                    'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                    'score': score,
+                    'description': f'Oversold reversion setup. Price {abs(distance_from_mean):.1f} std below mean.',
+                    'entry_point': f"₹{current_price:.2f} (Current - enter on extreme)",
+                    'stop_loss': f"₹{stop_loss:.2f} (5% below entry)",
+                    'target_1': f"₹{bb_mid:.2f} (Mean / Middle BB)",
+                    'target_2': f"₹{bb_upper:.2f} (Upper BB)",
+                    'action': 'BUY oversold extreme, exit at mean',
+                    'mean_reversion_data': {
+                        'sma_20': sma_20,
+                        'std_deviation': distance_from_mean,
+                        'bb_lower': bb_lower,
+                        'bb_mid': bb_mid,
+                        'bb_upper': bb_upper,
+                        'rsi': rsi,
+                        'expected_gain': reversion_gain * 100
+                    },
+                    'rules': [
+                        f'Price: {abs(distance_from_mean):.1f} std below mean',
+                        f'Current: ₹{current_price:.2f}',
+                        f'Mean (SMA-20): ₹{sma_20:.2f}',
+                        f'RSI: {rsi:.1f} (Oversold)' if rsi < 40 else f'RSI: {rsi:.1f}',
+                        f'Expected reversion: {reversion_gain*100:.1f}%',
+                        'Exit at mean or resistance',
+                        'Works best in ranging markets',
+                        'Statistical edge: 2+ std deviations'
+                    ]
+                }
+            
+            # Bearish Reversion Setup
+            else:  # is_bearish_reversion
+                target_mean = sma_20
+                stop_loss = current_price * 1.05  # 5% hard stop
+                
+                # Calculate expected move back to mean
+                reversion_decline = (current_price - target_mean) / current_price
+                
+                return {
+                    'detected': True,
+                    'pattern': 'Mean Reversion (Bearish)',
+                    'signal': 'BEARISH',
+                    'confidence': 'HIGH' if score > 0.85 else 'MEDIUM',
+                    'score': score,
+                    'description': f'Overbought reversion setup. Price {abs(distance_from_mean):.1f} std above mean.',
+                    'entry_point': f"₹{current_price:.2f} (SHORT current - enter on extreme)",
+                    'stop_loss': f"₹{stop_loss:.2f} (5% above entry)",
+                    'target_1': f"₹{bb_mid:.2f} (Mean / Middle BB)",
+                    'target_2': f"₹{bb_lower:.2f} (Lower BB)",
+                    'action': '🔻 SHORT overbought extreme, cover at mean',
+                    'mean_reversion_data': {
+                        'sma_20': sma_20,
+                        'std_deviation': distance_from_mean,
+                        'bb_lower': bb_lower,
+                        'bb_mid': bb_mid,
+                        'bb_upper': bb_upper,
+                        'rsi': rsi,
+                        'expected_decline': reversion_decline * 100
+                    },
+                    'rules': [
+                        f'Price: {abs(distance_from_mean):.1f} std above mean',
+                        f'Current: ₹{current_price:.2f}',
+                        f'Mean (SMA-20): ₹{sma_20:.2f}',
+                        f'RSI: {rsi:.1f} (Overbought)' if rsi > 60 else f'RSI: {rsi:.1f}',
+                        f'Expected reversion: {reversion_decline*100:.1f}%',
+                        'Cover at mean or support',
+                        'Works best in ranging markets',
+                        'Statistical edge: 2+ std deviations'
+                    ]
+                }
+        
+        return {'detected': False, 'score': score}
+    
+    # ============================================================================
     # MAIN DETECTION METHODS
     # ============================================================================
     
@@ -2070,7 +2907,7 @@ class PatternDetector:
     
     def detect_all_wyckoff_canslim_patterns(self) -> List[Dict]:
         """
-        Detect Wyckoff, CANSLIM, VCP, and Darvas Box patterns.
+        Detect Wyckoff, CANSLIM, VCP, Darvas Box, and advanced patterns.
         
         Returns:
             List of detected patterns with full details
@@ -2083,7 +2920,13 @@ class PatternDetector:
             self.detect_darvas_box,
             self.detect_wyckoff_accumulation,
             self.detect_wyckoff_distribution,
-            self.detect_canslim_setup
+            self.detect_canslim_setup,
+            self.detect_inverse_head_and_shoulders,
+            self.detect_triple_top,
+            self.detect_triple_bottom,
+            self.detect_order_blocks,
+            self.detect_elliott_wave,
+            self.detect_mean_reversion
         ]
         
         for detector in detectors:
@@ -2198,8 +3041,8 @@ if __name__ == "__main__":
     print("Pattern Detector Module - Ready for import")
     print("Available classes: PatternDetector")
     print("Available functions: format_pattern_summary, get_pattern_statistics")
-    print("\nTotal Patterns: 24")
+    print("\nTotal Patterns: 30")
     print("- Zanger: 6")
     print("- Classic: 8 (including bearish with SHORT signals)")
     print("- Swing: 5")
-    print("- Advanced: 5 (VCP, Darvas, Wyckoff, CANSLIM)")
+    print("- Advanced: 11 (VCP, Darvas, Wyckoff, CANSLIM, Inv H&S, Triple Top/Bottom, Order Blocks, Elliott Wave, Mean Reversion)")
