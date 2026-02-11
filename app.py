@@ -12,6 +12,7 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import OnBalanceVolumeIndicator
 import warnings
 from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
+from quantitative_analysis import FractalAnalysis, StatisticalEstimation, VolatilityModelling, run_full_quantitative_analysis
 
 warnings.filterwarnings('ignore')
 
@@ -111,7 +112,7 @@ class IndianEquityAnalyzer:
         df['SMA_200'] = SMAIndicator(df['Close'], window=200).sma_indicator()
         df['EMA_10'] = EMAIndicator(df['Close'], window=10).ema_indicator()
         df['EMA_20'] = EMAIndicator(df['Close'], window=20).ema_indicator()
-        df['EMA_70'] = EMAIndicator(df['Close'], window=70).ema_indicator()
+        df['EMA_70'] = EMAIndicator(df['Close'], window=20).ema_indicator()
         
         # MACD
         macd = MACD(df['Close'])
@@ -433,7 +434,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 x1=box_end,
                 y0=box_bottom,
                 y1=box_top,
-                line=dict(color='black', width=1, dash='dash'),
+                line=dict(color='#4169E1', width=3, dash='dash'),
                 fillcolor='rgba(65, 105, 225, 0.1)',
                 row=1, col=1
             )
@@ -443,7 +444,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 y=box_top,
                 line_dash="solid",
                 line_color='#4169E1',
-                line_width=2,
+                line_width=1,
                 annotation_text=f"📦 Box Top: ₹{box_top:.2f}",
                 annotation_position="right",
                 row=1, col=1
@@ -453,13 +454,138 @@ def draw_patterns_on_chart(fig, patterns, df):
                 y=box_bottom,
                 line_dash="solid",
                 line_color='#4169E1',
-                line_width=2,
+                line_width=1,
                 annotation_text=f"📦 Box Bottom: ₹{box_bottom:.2f}",
                 annotation_position="right",
                 row=1, col=1
             )
             
-           
+            # Add "DARVAS BOX" label - DELETED
+            
+            
+        
+        # Special handling for Order Blocks - draw the zone
+        if 'Order Block' in pattern_name and 'order_block_data' in pattern:
+            ob_data = pattern['order_block_data']
+            ob_high = ob_data['high']
+            ob_low = ob_data['low']
+            ob_type = ob_data['type']
+            
+            # Calculate zone start (show last 30% of chart)
+            zone_start = df.index[int(len(df) * 0.7)]
+            zone_end = df.index[-1]
+            
+            # Draw order block zone
+            ob_color = 'rgba(0, 255, 0, 0.15)' if ob_type == 'BULLISH' else 'rgba(255, 0, 0, 0.15)'
+            border_color = '#00cc66' if ob_type == 'BULLISH' else '#ff4d4d'
+            
+            fig.add_shape(
+                type="rect",
+                x0=zone_start,
+                x1=zone_end,
+                y0=ob_low,
+                y1=ob_high,
+                line=dict(color=border_color, width=2, dash='dot'),
+                fillcolor=ob_color,
+                row=1, col=1
+            )
+            
+            # Add order block label
+            fig.add_annotation(
+                x=zone_end,
+                y=(ob_high + ob_low) / 2,
+                text=f"<b>OB</b>",
+                showarrow=False,
+                font=dict(color=border_color, size=12, family='Arial Black'),
+                bgcolor='rgba(255, 255, 255, 0.9)',
+                bordercolor=border_color,
+                borderwidth=2,
+                xanchor='left',
+                row=1, col=1
+            )
+        
+        # Special handling for Elliott Wave - draw correction levels
+        if 'Elliott Wave' in pattern_name and 'elliott_data' in pattern:
+            ew_data = pattern['elliott_data']
+            if 'correction_levels' in ew_data:
+                levels = ew_data['correction_levels']
+                
+                # Draw Fibonacci correction levels
+                colors_map = {
+                    '38.2%': '#FFD700',  # Gold
+                    '50%': '#FF8C00',    # Dark Orange
+                    '61.8%': '#FF4500'   # Orange Red
+                }
+                
+                for level_name, level_price in levels.items():
+                    fig.add_hline(
+                        y=level_price,
+                        line_dash="dot",
+                        line_color=colors_map.get(level_name, '#FFA500'),
+                        line_width=1,
+                        annotation_text=f"Wave C {level_name}: ₹{level_price:.2f}",
+                        annotation_position="left",
+                        row=1, col=1
+                    )
+        
+        # Special handling for Mean Reversion - draw Bollinger Bands and mean
+        if 'Mean Reversion' in pattern_name and 'mean_reversion_data' in pattern:
+            mr_data = pattern['mean_reversion_data']
+            bb_upper = mr_data['bb_upper']
+            bb_mid = mr_data['bb_mid']
+            bb_lower = mr_data['bb_lower']
+            std_dev = mr_data['std_deviation']
+            
+            # Draw Bollinger Bands
+            fig.add_hline(
+                y=bb_upper,
+                line_dash="dash",
+                line_color='#FF6B6B',  # Red
+                line_width=2,
+                annotation_text=f"Upper BB: ₹{bb_upper:.2f} (+2σ)",
+                annotation_position="left",
+                row=1, col=1
+            )
+            
+            fig.add_hline(
+                y=bb_mid,
+                line_dash="solid",
+                line_color='#4ECDC4',  # Teal (Mean)
+                line_width=3,
+                annotation_text=f"MEAN (SMA-20): ₹{bb_mid:.2f}",
+                annotation_position="left",
+                row=1, col=1
+            )
+            
+            fig.add_hline(
+                y=bb_lower,
+                line_dash="dash",
+                line_color='#95E1D3',  # Light Green
+                line_width=2,
+                annotation_text=f"Lower BB: ₹{bb_lower:.2f} (-2σ)",
+                annotation_position="left",
+                row=1, col=1
+            )
+            
+            # Add standard deviation annotation
+            current_price = df['Close'].iloc[-1]
+            annotation_y = current_price * 1.02
+            
+            fig.add_annotation(
+                x=df.index[-5] if len(df) > 5 else df.index[-1],
+                y=annotation_y,
+                text=f"<b>{abs(std_dev):.1f}σ from mean</b>",
+                showarrow=True,
+                arrowhead=2,
+                arrowcolor='#FF6B6B' if std_dev > 0 else '#95E1D3',
+                ax=0,
+                ay=-40,
+                bgcolor='rgba(255, 255, 255, 0.9)',
+                bordercolor='#FF6B6B' if std_dev > 0 else '#95E1D3',
+                borderwidth=2,
+                font=dict(size=12, color='black'),
+                row=1, col=1
+            )
         
         # Draw Entry Point
         if entry_price:
@@ -509,8 +635,8 @@ def draw_patterns_on_chart(fig, patterns, df):
                 row=1, col=1
             )
         
-        # Add pattern label annotation (skip for Darvas Box as it has custom label)
-        if 'Darvas Box' not in pattern_name:
+        # Add pattern label annotation (skip for special patterns with custom labels)
+        if 'Darvas Box' not in pattern_name and 'Order Block' not in pattern_name:
             fig.add_annotation(
                 x=last_date,
                 y=df['High'].max() * (1 - 0.05 * i),  # Stack annotations
@@ -535,7 +661,7 @@ def draw_patterns_on_chart(fig, patterns, df):
 
 def create_candlestick_chart(analyzer, patterns=None):
     """Create advanced candlestick chart with indicators and patterns"""
-    df = analyzer.data.tail(200)
+    df = analyzer.data.tail(100)
     
     fig = make_subplots(
         rows=4, cols=1,
@@ -561,9 +687,9 @@ def create_candlestick_chart(analyzer, patterns=None):
     # Moving Averages
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_21'], name='SMA 21', line=dict(color='orange', width=1)), row=1, col=1)
     fig.add_trace(go.Scatter(x=df.index, y=df['SMA_50'], name='SMA 50', line=dict(color='blue', width=1)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], name='SMA 200', line=dict(color='red', width=1.5)), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_10'], name='EMA 10', line=dict(color='green', width=1, dash='dash')), row=1, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_70'], name='EMA 70', line=dict(color='black', width=1, dash='dash')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['SMA_200'], name='SMA 200', line=dict(color='red', width=2)), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_10'], name='EMA 10', line=dict(color='green', width=1.5, dash='dash')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_70'], name='EMA 70', line=dict(color='black', width=1.5, dash='dash')), row=1, col=1)
     
     # Bollinger Bands
     fig.add_trace(go.Scatter(x=df.index, y=df['BB_High'], name='BB High', line=dict(color='gray', width=1, dash='dot')), row=1, col=1)
@@ -666,7 +792,7 @@ def main():
     """Main Streamlit application"""
     
     st.markdown('<div class="main-header">🎯 Indian Equity Market Analyzer</div>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; color: gray;">Master Trader Grade Analysis - Dan Zanger & Qullamaggie Strategies</p>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; color: gray;">Master Trader Grade Analysis</p>', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
@@ -674,7 +800,7 @@ def main():
         
         symbol = st.text_input(
             "Enter Stock Symbol (NSE)",
-            value="",
+            value="RELIANCE",
             help="Enter NSE symbol without .NS suffix (e.g., RELIANCE, TCS, INFY)"
         )
         
@@ -717,18 +843,30 @@ def main():
         - ✅ Gap and Go
         - ✅ ABCD Pattern
         
-        **Advanced (5):**
+        **Advanced (11):**
         - ✅ VCP 🔥 (Minervini)
         - ✅ Darvas Box 📦
         - ✅ Wyckoff Accumulation 📊
         - ✅ Wyckoff Distribution 🔻
         - ✅ CANSLIM Setup 💎
+        - ✅ Inv H&S 🔄 (Bullish Rev)
+        - ✅ Triple Top 🔻🔻🔻
+        - ✅ Triple Bottom 💚💚💚
+        - ✅ Order Blocks 🏦 (ICT)
+        - ✅ Elliott Wave 🌊 (5-3)
+        - ✅ Mean Reversion 📉📈 (Stats)
+        
+        **TOTAL: 30 Patterns**
         
         🔻 = **SHORT Signal**
         📊 = **Smart Money**
         💎 = **Growth Stock**
         🔥 = **Stage 2 Uptrend**
         📦 = **Box Breakout**
+        🔄 = **Bullish Reversal**
+        🏦 = **Institutional Zones**
+        🌊 = **Wave Theory**
+        📉📈 = **Statistical Edge**
         """)
         
         st.markdown("---")
@@ -986,6 +1124,24 @@ def main():
                             elif 'Distribution' in pattern_name:
                                 icon = "📉"
                                 color = "red"
+                            elif 'Inverse Head' in pattern_name:
+                                icon = "🔄"
+                                color = "green"
+                            elif 'Triple Top' in pattern_name:
+                                icon = "🔻🔻🔻"
+                                color = "red"
+                            elif 'Triple Bottom' in pattern_name:
+                                icon = "💚💚💚"
+                                color = "green"
+                            elif 'Order Block' in pattern_name:
+                                icon = "🏦"
+                                color = "purple"
+                            elif 'Elliott Wave' in pattern_name:
+                                icon = "🌊"
+                                color = "blue"
+                            elif 'Mean Reversion' in pattern_name:
+                                icon = "📉📈"
+                                color = "purple"
                             else:
                                 icon = "📈"
                                 color = "gray"
@@ -996,7 +1152,7 @@ def main():
                                 
                                 # Special display for VCP
                                 if 'VCP' in pattern_name:
-                                    st.info("🔥 **VCP** = Mark Minervini's Volatility Contraction Pattern (SEPA)")
+                                    st.info("🔥 **VCP** = Mark Minervini's Volatility Contraction Pattern-VCP")
                                     
                                     if 'contraction_data' in pattern:
                                         pullbacks = pattern['contraction_data'].get('pullbacks', [])
@@ -1055,6 +1211,131 @@ def main():
                                         - 🎯 Phase E: Markdown phase ready
                                         """)
                                 
+                                # Special display for Inverse Head and Shoulders
+                                if 'Inverse Head' in pattern_name:
+                                    st.success("🔄 **Inverse H&S** = Bullish reversal (opposite of Head & Shoulders)")
+                                    st.markdown("""
+                                    **Pattern Structure:**
+                                    - Left Shoulder → Deeper Head → Right Shoulder
+                                    - Neckline resistance must break
+                                    - Volume should increase through pattern
+                                    - Strong reversal signal from downtrend
+                                    """)
+                                
+                                # Special display for Triple Patterns
+                                if 'Triple Top' in pattern_name:
+                                    st.warning("🔻🔻🔻 **Triple Top** = Very strong bearish reversal")
+                                    st.markdown("""
+                                    **Pattern Strength:**
+                                    - 3 failed attempts at resistance
+                                    - Higher reliability than Double Top
+                                    - Volume declining on each peak
+                                    - Major distribution pattern
+                                    """)
+                                
+                                if 'Triple Bottom' in pattern_name:
+                                    st.success("💚💚💚 **Triple Bottom** = Very strong bullish reversal")
+                                    st.markdown("""
+                                    **Pattern Strength:**
+                                    - 3 successful tests of support
+                                    - Higher reliability than Double Bottom
+                                    - Volume increasing shows accumulation
+                                    - Major reversal pattern
+                                    """)
+                                
+                                # Special display for Order Blocks
+                                if 'Order Block' in pattern_name:
+                                    ob_type = pattern.get('order_block_data', {}).get('type', 'UNKNOWN')
+                                    if ob_type == 'BULLISH':
+                                        st.success("🏦 **Bullish Order Block** = Smart Money / ICT Concept")
+                                    else:
+                                        st.warning("🏦 **Bearish Order Block** = Smart Money / ICT Concept")
+                                    
+                                    st.markdown("""
+                                    **Order Block Theory:**
+                                    - Represents institutional order zones
+                                    - Last opposite candle before big move
+                                    - Price often returns to test these zones
+                                    - ICT (Inner Circle Trader) methodology
+                                    - ✅ Zone drawn on chart
+                                    """)
+                                    
+                                    if 'order_block_data' in pattern:
+                                        ob = pattern['order_block_data']
+                                        st.markdown(f"""
+                                        **Block Zone:**
+                                        - 🏦 High: ₹{ob['high']:.2f}
+                                        - 🏦 Low: ₹{ob['low']:.2f}
+                                        - Type: {ob['type']}
+                                        """)
+                                
+                                # Special display for Elliott Wave
+                                if 'Elliott Wave' in pattern_name:
+                                    st.info("🌊 **Elliott Wave** = Ralph Nelson Elliott's Wave Theory")
+                                    st.markdown("""
+                                    **Wave Theory Basics:**
+                                    - 5-wave impulse in trend direction (1-2-3-4-5)
+                                    - 3-wave correction against trend (A-B-C)
+                                    - Wave 3 is never the shortest
+                                    - Wave 2 never retraces >100% of Wave 1
+                                    - Wave 4 doesn't overlap Wave 1
+                                    """)
+                                    
+                                    if 'elliott_data' in pattern:
+                                        ew = pattern['elliott_data']
+                                        st.markdown(f"**Current Position:** {ew.get('wave_position', 'Unknown')}")
+                                        
+                                        if 'correction_levels' in ew:
+                                            st.markdown("**Fibonacci Correction Levels:**")
+                                            levels = ew['correction_levels']
+                                            col1, col2, col3 = st.columns(3)
+                                            with col1:
+                                                st.metric("38.2% Level", f"₹{levels['38.2%']:.2f}")
+                                            with col2:
+                                                st.metric("50% Level", f"₹{levels['50%']:.2f}")
+                                            with col3:
+                                                st.metric("61.8% Level", f"₹{levels['61.8%']:.2f}")
+                                            
+                                            st.success("✅ Fibonacci levels drawn on chart")
+                                
+                                # Special display for Mean Reversion
+                                if 'Mean Reversion' in pattern_name:
+                                    if 'Bullish' in pattern_name:
+                                        st.success("📉📈 **Mean Reversion (Bullish)** = Statistical oversold reversion")
+                                    else:
+                                        st.warning("📈📉 **Mean Reversion (Bearish)** = Statistical overbought reversion")
+                                    
+                                    st.markdown("""
+                                    **Mean Reversion Strategy:**
+                                    - Price has deviated significantly from statistical mean
+                                    - Bollinger Bands stretch indicates extreme
+                                    - RSI confirms oversold/overbought
+                                    - Statistical edge: Price tends to revert to mean
+                                    - Works best in ranging/sideways markets
+                                    """)
+                                    
+                                    if 'mean_reversion_data' in pattern:
+                                        mr = pattern['mean_reversion_data']
+                                        
+                                        st.markdown("**Statistical Analysis:**")
+                                        col1, col2, col3, col4 = st.columns(4)
+                                        with col1:
+                                            st.metric("Std Deviation", f"{abs(mr['std_deviation']):.2f}σ")
+                                        with col2:
+                                            st.metric("Mean (SMA-20)", f"₹{mr['sma_20']:.2f}")
+                                        with col3:
+                                            st.metric("RSI", f"{mr['rsi']:.1f}")
+                                        with col4:
+                                            expected_move = mr.get('expected_gain', mr.get('expected_decline', 0))
+                                            st.metric("Expected Move", f"{expected_move:.1f}%")
+                                        
+                                        st.markdown("**Bollinger Bands:**")
+                                        st.markdown(f"- Upper BB (+2σ): ₹{mr['bb_upper']:.2f}")
+                                        st.markdown(f"- Middle BB (Mean): ₹{mr['bb_mid']:.2f}")
+                                        st.markdown(f"- Lower BB (-2σ): ₹{mr['bb_lower']:.2f}")
+                                        
+                                        st.success("✅ Bollinger Bands and Mean drawn on chart")
+                                
                                 # Display entry/exit points
                                 col1, col2, col3, col4 = st.columns(4)
                                 with col1:
@@ -1083,7 +1364,7 @@ def main():
                 # Charts
                 st.markdown('<div class="sub-header">📊 Technical Analysis Charts</div>', unsafe_allow_html=True)
                 
-                chart_tab1, chart_tab2 = st.tabs(["Price Action & Indicators", "Volume Profile"])
+                chart_tab1, chart_tab2, chart_tab3 = st.tabs(["Price Action & Indicators", "Volume Profile", "Quantitative Analysis"])
                 
                 with chart_tab1:
                     # Create chart with or without patterns based on user preference
@@ -1108,6 +1389,234 @@ def main():
                         st.metric("Value Area High", f"₹{vp['value_area_high']:.2f}")
                     with col3:
                         st.metric("Value Area Low", f"₹{vp['value_area_low']:.2f}")
+                
+                with chart_tab3:
+                    st.markdown("### 🔬 Advanced Quantitative Analysis")
+                    
+                    # Run quantitative analysis
+                    with st.spinner('Running advanced quantitative models...'):
+                        quant_results = run_full_quantitative_analysis(analyzer.data)
+                    
+                    # Fractal Analysis Section
+                    st.markdown("---")
+                    st.markdown("#### 📐 Fractal Analysis")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Hurst Exponent Analysis**")
+                        hurst = quant_results['fractal']['hurst_exponent']
+                        
+                        st.metric("Hurst Exponent", f"{hurst['hurst_exponent']:.3f}")
+                        st.metric("Market Behavior", hurst['market_behavior'])
+                        st.metric("Confidence", hurst['confidence'])
+                        
+                        # Interpretation
+                        if hurst['market_behavior'] == 'PERSISTENT':
+                            st.success(f"🔥 **Trending Market** (H = {hurst['hurst_exponent']:.3f} > 0.5)")
+                            st.info(f"📊 {hurst['recommendation']}")
+                        elif hurst['market_behavior'] == 'ANTI_PERSISTENT':
+                            st.warning(f"📉 **Mean Reverting** (H = {hurst['hurst_exponent']:.3f} < 0.5)")
+                            st.info(f"📊 {hurst['recommendation']}")
+                        else:
+                            st.info(f"🎲 **Random Walk** (H ≈ 0.5)")
+                            st.info(f"📊 {hurst['recommendation']}")
+                        
+                        with st.expander("ℹ️ What is Hurst Exponent?"):
+                            st.markdown("""
+                            **Hurst Exponent (H) measures long-term memory:**
+                            - **H = 0.5**: Random walk (no memory)
+                            - **H > 0.5**: Trending/Persistent (momentum)
+                            - **H < 0.5**: Mean reverting (anti-momentum)
+                            
+                            **Trading Implications:**
+                            - High H → Use trend-following strategies
+                            - Low H → Use mean reversion strategies
+                            - H ≈ 0.5 → Market is efficient/random
+                            """)
+                    
+                    with col2:
+                        st.markdown("**Fractal Dimension Analysis**")
+                        fractal_dim = quant_results['fractal']['fractal_dimension']
+                        
+                        st.metric("Fractal Dimension", f"{fractal_dim['fractal_dimension']:.3f}")
+                        st.metric("Market State", fractal_dim['market_state'])
+                        st.metric("Confidence", fractal_dim['confidence'])
+                        
+                        # Interpretation
+                        if fractal_dim['market_state'] == 'TRENDING':
+                            st.success(f"📈 **Strong Trend** (FD = {fractal_dim['fractal_dimension']:.3f} < 1.5)")
+                            st.info(f"📊 {fractal_dim['recommendation']}")
+                        elif fractal_dim['market_state'] == 'RANGE_BOUND':
+                            st.warning(f"📊 **Choppy Market** (FD = {fractal_dim['fractal_dimension']:.3f} > 1.7)")
+                            st.info(f"📊 {fractal_dim['recommendation']}")
+                        else:
+                            st.info(f"📉 **Mild Trend** (FD ≈ 1.5)")
+                            st.info(f"📊 {fractal_dim['recommendation']}")
+                        
+                        with st.expander("ℹ️ What is Fractal Dimension?"):
+                            st.markdown("""
+                            **Fractal Dimension (FD) measures complexity:**
+                            - **FD = 1.0**: Perfectly smooth (strong trend)
+                            - **FD = 1.5**: Random walk
+                            - **FD = 2.0**: Highly irregular (choppy)
+                            
+                            **Trading Implications:**
+                            - Low FD → Strong directional bias
+                            - Mid FD → Weak trend or random
+                            - High FD → Range-bound, use mean reversion
+                            """)
+                    
+                    # Statistical Estimation Section
+                    st.markdown("---")
+                    st.markdown("#### 📊 Statistical Estimation (MLE & Bayesian)")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Maximum Likelihood Estimation**")
+                        
+                        mle_normal = quant_results['statistical_estimation']['mle_normal']
+                        mle_t = quant_results['statistical_estimation']['mle_students_t']
+                        model_comp = quant_results['statistical_estimation']['model_comparison']
+                        
+                        # Display best model
+                        if model_comp['best_model_aic'] == 'STUDENTS_T':
+                            st.success("✅ **Best Model: Student's t-distribution**")
+                            st.markdown(f"**Degrees of Freedom:** {mle_t['degrees_of_freedom']:.2f}")
+                            st.markdown(f"**Tail Heaviness:** {mle_t['tail_heaviness']}")
+                            st.info("Market shows fat tails - extreme moves are more common than normal distribution predicts")
+                        else:
+                            st.success("✅ **Best Model: Normal distribution**")
+                            st.info("Returns approximately follow normal distribution")
+                        
+                        st.metric("Annual Return (MLE)", f"{mle_normal['annual_return']:.2f}%")
+                        st.metric("Annual Volatility (MLE)", f"{mle_normal['annual_volatility']:.2f}%")
+                        st.metric("Sharpe Ratio", f"{mle_normal['sharpe_ratio']:.3f}")
+                        
+                        with st.expander("ℹ️ What is MLE?"):
+                            st.markdown("""
+                            **Maximum Likelihood Estimation:**
+                            - Finds parameters that maximize probability of observed data
+                            - Student's t-distribution better captures fat tails
+                            - Used for risk modeling and option pricing
+                            """)
+                    
+                    with col2:
+                        st.markdown("**Bayesian Estimation**")
+                        
+                        bayesian = quant_results['statistical_estimation']['bayesian']
+                        
+                        st.metric("Posterior Mean Return", f"{bayesian['posterior_mu']:.6f}")
+                        st.metric("Posterior Volatility", f"{bayesian['posterior_sigma']:.6f}")
+                        st.metric("Prob of Positive Return", f"{bayesian['prob_positive_return']:.1f}%")
+                        
+                        st.markdown(f"**95% Credible Interval:**")
+                        ci = bayesian['credible_interval_95']
+                        st.markdown(f"[{ci[0]:.6f}, {ci[1]:.6f}]")
+                        
+                        st.metric("Annual Return (Bayesian)", f"{bayesian['annual_return_estimate']:.2f}%")
+                        st.metric("Annual Volatility (Bayesian)", f"{bayesian['annual_volatility_estimate']:.2f}%")
+                        
+                        with st.expander("ℹ️ What is Bayesian Estimation?"):
+                            st.markdown("""
+                            **Bayesian Estimation:**
+                            - Combines prior beliefs with observed data
+                            - Provides probability distributions, not point estimates
+                            - More robust with limited data
+                            - Credible intervals show uncertainty
+                            """)
+                    
+                    # Volatility Modelling Section
+                    st.markdown("---")
+                    st.markdown("#### 📉 Volatility Modelling")
+                    
+                    vol_results = quant_results['volatility']
+                    
+                    # GARCH Model
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**GARCH(1,1) Model**")
+                        
+                        garch = vol_results['garch']
+                        
+                        if garch['convergence'] == 'SUCCESS':
+                            st.success("✅ GARCH Model Converged")
+                            
+                            st.metric("Omega (ω)", f"{garch['omega']:.6f}")
+                            st.metric("Alpha (α)", f"{garch['alpha']:.4f}")
+                            st.metric("Beta (β)", f"{garch['beta']:.4f}")
+                            st.metric("Persistence (α + β)", f"{garch['persistence']:.4f}")
+                            
+                            st.markdown(f"**Volatility Forecast:** {garch['forecast_volatility']:.2f}%")
+                            st.markdown(f"**Long-run Volatility:** {garch['long_run_volatility']:.2f}%")
+                            
+                            if garch['persistence'] > 0.98:
+                                st.warning("⚠️ High persistence - volatility shocks are long-lasting")
+                            elif garch['persistence'] < 0.90:
+                                st.info("✅ Low persistence - volatility mean-reverts quickly")
+                            
+                            with st.expander("ℹ️ What is GARCH?"):
+                                st.markdown("""
+                                **GARCH (Generalized ARCH):**
+                                - Models time-varying volatility
+                                - σ²(t) = ω + α·r²(t-1) + β·σ²(t-1)
+                                - Captures volatility clustering
+                                - Used in risk management and option pricing
+                                
+                                **Parameters:**
+                                - **ω**: Long-run variance level
+                                - **α**: Reaction to recent shocks
+                                - **β**: Persistence of volatility
+                                """)
+                        else:
+                            st.error(f"❌ GARCH Convergence: {garch['convergence']}")
+                    
+                    with col2:
+                        st.markdown("**Volatility Comparison**")
+                        
+                        vol_comp = vol_results['comparison'].tail(1)
+                        
+                        if not vol_comp.empty:
+                            st.markdown("**Current Volatility Estimates:**")
+                            for col in vol_comp.columns:
+                                val = vol_comp[col].iloc[-1]
+                                if not pd.isna(val):
+                                    st.metric(col.replace('_', ' '), f"{val:.2f}%")
+                            
+                            with st.expander("ℹ️ Volatility Estimators"):
+                                st.markdown("""
+                                **Different Volatility Measures:**
+                                - **Simple Vol**: Standard deviation of returns
+                                - **EWMA**: Exponentially weighted (recent data weighted more)
+                                - **Parkinson**: Uses High-Low range (more efficient)
+                                - **Garman-Klass**: Uses OHLC (accounts for gaps)
+                                - **Yang-Zhang**: Most efficient OHLC estimator
+                                """)
+                    
+                    # Volatility Regimes
+                    st.markdown("**Volatility Regime Analysis**")
+                    
+                    regimes = vol_results['regimes']
+                    current_regime = regimes['Regime'].iloc[-1] if not regimes.empty else 'UNKNOWN'
+                    current_vol = regimes['Volatility'].iloc[-1] if not regimes.empty else 0
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Current Regime", current_regime)
+                    with col2:
+                        st.metric("Current Volatility", f"{current_vol:.2f}%")
+                    with col3:
+                        regime_changes = regimes['Regime_Change'].sum()
+                        st.metric("Regime Changes (Total)", regime_changes)
+                    
+                    if current_regime == 'HIGH':
+                        st.error("⚠️ **HIGH VOLATILITY REGIME** - Increase position sizing caution, widen stops")
+                    elif current_regime == 'LOW':
+                        st.success("✅ **LOW VOLATILITY REGIME** - Favorable for entries, tighter stops possible")
+                    else:
+                        st.info("📊 **MEDIUM VOLATILITY REGIME** - Normal market conditions")
                 
                 # Key Metrics Table
                 st.markdown('<div class="sub-header">📋 Key Technical Indicators</div>', unsafe_allow_html=True)
