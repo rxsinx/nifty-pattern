@@ -148,7 +148,7 @@ class IndianEquityAnalyzer:
     
     def detect_volume_profile(self):
         """Detect volume profile patterns"""
-        df = self.data.tail(100)
+        df = self.data.tail(200)
         
         if len(df) < 20:
             return {
@@ -661,7 +661,7 @@ def draw_patterns_on_chart(fig, patterns, df):
 
 def create_candlestick_chart(analyzer, patterns=None):
     """Create advanced candlestick chart with indicators and patterns"""
-    df = analyzer.data.tail(100)
+    df = analyzer.data.tail(200)
     
     fig = make_subplots(
         rows=4, cols=1,
