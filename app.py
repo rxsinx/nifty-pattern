@@ -122,7 +122,7 @@ class IndianEquityAnalyzer:
         
         # RSI
         df['RSI'] = RSIIndicator(df['Close']).rsi()
-        df['RSI_MA21'] = SMAIndicator(df['Close'], window=21).rsi()
+        df['RSI_MA21'] = RSIIndicator(df['Close'], window=21).rsi()
         
         # Bollinger Bands
         bb = BollingerBands(df['Close'])
