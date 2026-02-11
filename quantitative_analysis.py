@@ -277,8 +277,8 @@ class FractalAnalysis:
                 df.loc[df.index[i], 'Fractal_Low_Price'] = df['Low'].iloc[i]
         
         return df[['Fractal_High', 'Fractal_Low', 'Fractal_High_Price', 'Fractal_Low_Price']]
-
-def forecast_fractal_price(self, forecast_days: int = 30) -> Dict:
+    
+    def forecast_fractal_price(self, forecast_days: int = 30) -> Dict:
         """
         Forecast future price using fractal analysis and Hurst exponent.
         
@@ -389,10 +389,18 @@ def forecast_fractal_price(self, forecast_days: int = 30) -> Dict:
             direction = 'NEUTRAL'
         
         # Generate dates for forecast
-        import pandas as pd
-        last_date = self.data.index[-1]
-        forecast_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), 
-                                       periods=forecast_days, freq='D')
+        try:
+            last_date = self.data.index[-1]
+            # Use business days for forecast
+            forecast_dates = pd.bdate_range(start=last_date + pd.Timedelta(days=1), 
+                                           periods=forecast_days)
+            # Convert to list of datetime objects
+            forecast_dates_list = [d.to_pydatetime() for d in forecast_dates]
+        except Exception as e:
+            # Fallback: just use sequential dates
+            from datetime import datetime, timedelta
+            last_date = datetime.now()
+            forecast_dates_list = [(last_date + timedelta(days=i+1)) for i in range(forecast_days)]
         
         return {
             'forecast_days': forecast_days,
@@ -403,7 +411,7 @@ def forecast_fractal_price(self, forecast_days: int = 30) -> Dict:
             'direction': direction,
             'expected_return': float(expected_return),
             'expected_volatility': float(expected_volatility),
-            'dates': forecast_dates.tolist(),
+            'dates': forecast_dates_list,
             'mean_forecast': mean_forecast.tolist(),
             'median_forecast': median_forecast.tolist(),
             'ci_lower_95': ci_lower_95.tolist(),
