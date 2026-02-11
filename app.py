@@ -790,6 +790,157 @@ def create_volume_profile_chart(analyzer):
     
     return fig
 
+#FRACTAL DRAW ADD
+def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
+    """
+    Create fractal-based price forecast chart with confidence intervals.
+    
+    Args:
+        analyzer: IndianEquityAnalyzer instance
+        forecast_days: Number of days to forecast
+        
+    Returns:
+        Plotly figure with forecast
+    """
+    # Get fractal forecast
+    from quantitative_analysis import FractalAnalysis
+    fractal = FractalAnalysis(analyzer.data)
+    forecast = fractal.forecast_fractal_price(forecast_days=forecast_days)
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Historical prices (last 60 days)
+    historical_data = analyzer.data.tail(60)
+    
+    # Add historical prices
+    fig.add_trace(go.Scatter(
+        x=historical_data.index,
+        y=historical_data['Close'],
+        mode='lines',
+        name='Historical Price',
+        line=dict(color='#2E86AB', width=2)
+    ))
+    
+    # Add forecast dates
+    forecast_dates = forecast['dates']
+    
+    # Add mean forecast
+    fig.add_trace(go.Scatter(
+        x=forecast_dates,
+        y=forecast['mean_forecast'],
+        mode='lines',
+        name='Mean Forecast',
+        line=dict(color='#A23B72', width=3, dash='dash')
+    ))
+    
+    # Add median forecast
+    fig.add_trace(go.Scatter(
+        x=forecast_dates,
+        y=forecast['median_forecast'],
+        mode='lines',
+        name='Median Forecast',
+        line=dict(color='#F18F01', width=2, dash='dot'),
+        visible='legendonly'
+    ))
+    
+    # Add 95% confidence interval
+    fig.add_trace(go.Scatter(
+        x=forecast_dates,
+        y=forecast['ci_upper_95'],
+        mode='lines',
+        name='95% CI Upper',
+        line=dict(color='rgba(162, 59, 114, 0.3)', width=1),
+        showlegend=True
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=forecast_dates,
+        y=forecast['ci_lower_95'],
+        mode='lines',
+        name='95% CI Lower',
+        line=dict(color='rgba(162, 59, 114, 0.3)', width=1),
+        fill='tonexty',
+        fillcolor='rgba(162, 59, 114, 0.2)',
+        showlegend=True
+    ))
+    
+    # Add 68% confidence interval
+    fig.add_trace(go.Scatter(
+        x=forecast_dates,
+        y=forecast['ci_upper_68'],
+        mode='lines',
+        name='68% CI Upper',
+        line=dict(color='rgba(241, 143, 1, 0.4)', width=1),
+        showlegend=True
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=forecast_dates,
+        y=forecast['ci_lower_68'],
+        mode='lines',
+        name='68% CI Lower',
+        line=dict(color='rgba(241, 143, 1, 0.4)', width=1),
+        fill='tonexty',
+        fillcolor='rgba(241, 143, 1, 0.3)',
+        showlegend=True
+    ))
+    
+    # Add current price line
+    current_price = forecast['current_price']
+    fig.add_hline(
+        y=current_price,
+        line_dash="solid",
+        line_color="green",
+        line_width=2,
+        annotation_text=f"Current: ₹{current_price:.2f}",
+        annotation_position="left"
+    )
+    
+    # Add target price line
+    target_price = forecast['target_price_30d']
+    fig.add_hline(
+        y=target_price,
+        line_dash="dash",
+        line_color="red",
+        line_width=2,
+        annotation_text=f"30D Target: ₹{target_price:.2f}",
+        annotation_position="right"
+    )
+    
+    # Update layout
+    fig.update_layout(
+        title=f'Fractal Price Forecast - {forecast_days} Days (H={forecast["hurst_exponent"]:.3f}, FD={forecast["fractal_dimension"]:.3f})',
+        xaxis_title='Date',
+        yaxis_title='Price (₹)',
+        height=600,
+        hovermode='x unified',
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor="rgba(255, 255, 255, 0.8)"
+        )
+    )
+    
+    # Add annotation about forecast bias
+    bias_text = f"Forecast Bias: {forecast['forecast_bias']} | Direction: {forecast['direction']}"
+    fig.add_annotation(
+        text=bias_text,
+        xref="paper", yref="paper",
+        x=0.5, y=1.08,
+        showarrow=False,
+        font=dict(size=12, color="blue"),
+        bgcolor="rgba(255, 255, 200, 0.8)",
+        bordercolor="blue",
+        borderwidth=1
+    )
+    
+    return fig
+
 def main():
     """Main Streamlit application"""
     
@@ -1398,6 +1549,83 @@ def main():
                     # Run quantitative analysis
                     with st.spinner('Running advanced quantitative models...'):
                         quant_results = run_full_quantitative_analysis(analyzer.data)
+
+                    # Fractal Price Forecast Section (NEW - at top)
+                    st.markdown("---")
+                    st.markdown("#### 🔮 Fractal Price Forecast (30 Days)")
+                    
+                    # Get fractal forecast
+                    from quantitative_analysis import FractalAnalysis
+                    fractal_analyzer = FractalAnalysis(analyzer.data)
+                    forecast = fractal_analyzer.forecast_fractal_price(forecast_days=30)
+                    
+                    # Display forecast chart
+                    fig_forecast = create_fractal_forecast_chart(analyzer, forecast_days=30)
+                    st.plotly_chart(fig_forecast, use_container_width=True)
+                    
+                    # Forecast metrics
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Current Price", f"₹{forecast['current_price']:.2f}")
+                        st.metric("30-Day Target", f"₹{forecast['target_price_30d']:.2f}", 
+                                 f"{forecast['expected_return']:.2f}%")
+                    
+                    with col2:
+                        st.metric("Best Case (95% CI)", f"₹{forecast['best_case_30d']:.2f}",
+                                 f"+{((forecast['best_case_30d'] - forecast['current_price']) / forecast['current_price'] * 100):.2f}%")
+                        st.metric("Worst Case (95% CI)", f"₹{forecast['worst_case_30d']:.2f}",
+                                 f"{((forecast['worst_case_30d'] - forecast['current_price']) / forecast['current_price'] * 100):.2f}%")
+                    
+                    with col3:
+                        st.metric("Forecast Bias", forecast['forecast_bias'])
+                        st.metric("Direction", forecast['direction'])
+                    
+                    with col4:
+                        st.metric("Confidence Level", forecast['confidence_level'])
+                        st.metric("Expected Volatility", f"{forecast['expected_volatility']:.2f}%")
+                    
+                    # Forecast interpretation
+                    if forecast['direction'] == 'BULLISH':
+                        st.success(f"📈 **Bullish Forecast**: Expected to reach ₹{forecast['target_price_30d']:.2f} in 30 days ({forecast['expected_return']:.2f}% gain)")
+                    elif forecast['direction'] == 'BEARISH':
+                        st.error(f"📉 **Bearish Forecast**: Expected to decline to ₹{forecast['target_price_30d']:.2f} in 30 days ({forecast['expected_return']:.2f}% loss)")
+                    else:
+                        st.info(f"📊 **Neutral Forecast**: Price expected around ₹{forecast['target_price_30d']:.2f} in 30 days")
+                    
+                    # Forecast explanation
+                    with st.expander("ℹ️ How Fractal Forecast Works"):
+                        st.markdown(f"""
+                        **Fractal-Based Price Forecasting:**
+                        
+                        This forecast uses advanced fractal mathematics to predict future prices:
+                        
+                        1. **Hurst Exponent (H = {forecast['hurst_exponent']:.3f})**:
+                           - Measures trend persistence
+                           - H > 0.5: Trending market (current trend likely continues)
+                           - H < 0.5: Mean-reverting market (price likely reverses)
+                           - H ≈ 0.5: Random walk (unpredictable)
+                        
+                        2. **Fractal Dimension (FD = {forecast['fractal_dimension']:.3f})**:
+                           - Measures market complexity
+                           - Low FD: Smooth trend (lower volatility)
+                           - High FD: Choppy market (higher volatility)
+                        
+                        3. **Monte Carlo Simulation**:
+                           - 1,000 price paths simulated
+                           - Incorporates historical volatility
+                           - Accounts for fractal properties
+                        
+                        4. **Confidence Intervals**:
+                           - 68% CI: Price has 68% chance to be in this range
+                           - 95% CI: Price has 95% chance to be in this range
+                        
+                        **Current Forecast Bias: {forecast['forecast_bias']}**
+                        
+                        ⚠️ **Disclaimer**: This is a statistical model based on historical patterns. 
+                        Actual prices may differ due to unforeseen events, news, or market conditions.
+                        Always combine with fundamental analysis and risk management.
+                        """)
                     
                     # Fractal Analysis Section
                     st.markdown("---")
