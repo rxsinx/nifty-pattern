@@ -278,6 +278,144 @@ class FractalAnalysis:
         
         return df[['Fractal_High', 'Fractal_Low', 'Fractal_High_Price', 'Fractal_Low_Price']]
 
+def forecast_fractal_price(self, forecast_days: int = 30) -> Dict:
+        """
+        Forecast future price using fractal analysis and Hurst exponent.
+        
+        Uses:
+        - Hurst exponent for trend persistence
+        - Fractal dimension for volatility scaling
+        - Historical volatility for confidence bands
+        - Geometric Brownian Motion with fractal adjustment
+        
+        Args:
+            forecast_days: Number of days to forecast (default 30)
+            
+        Returns:
+            Dictionary with forecasted prices and confidence intervals
+        """
+        # Get Hurst exponent
+        hurst_result = self.calculate_hurst_exponent()
+        hurst = hurst_result['hurst_exponent']
+        
+        # Get fractal dimension
+        fractal_dim_result = self.calculate_fractal_dimension()
+        fractal_dim = fractal_dim_result['fractal_dimension']
+        
+        # Calculate returns and volatility
+        returns = np.diff(np.log(self.prices))
+        mu = np.mean(returns)  # Daily mean return
+        sigma = np.std(returns)  # Daily volatility
+        
+        # Adjust volatility based on fractal dimension
+        # Higher fractal dimension = higher volatility
+        fractal_vol_multiplier = fractal_dim / 1.5
+        adjusted_sigma = sigma * fractal_vol_multiplier
+        
+        # Adjust drift based on Hurst exponent
+        # H > 0.5: Enhance positive drift (trending)
+        # H < 0.5: Dampen drift (mean reverting)
+        # H = 0.5: No adjustment (random walk)
+        hurst_drift_adjustment = 1 + (hurst - 0.5) * 2
+        adjusted_mu = mu * hurst_drift_adjustment
+        
+        # Current price
+        current_price = self.prices[-1]
+        
+        # Generate forecast paths using Fractional Brownian Motion approximation
+        n_simulations = 1000  # Number of Monte Carlo paths
+        dt = 1  # Daily time step
+        
+        # Initialize arrays
+        forecast_prices = np.zeros((n_simulations, forecast_days))
+        forecast_prices[:, 0] = current_price
+        
+        # Generate paths
+        for sim in range(n_simulations):
+            for day in range(1, forecast_days):
+                # Generate correlated random shock based on Hurst exponent
+                # For H > 0.5: Positive autocorrelation (trending)
+                # For H < 0.5: Negative autocorrelation (mean reverting)
+                
+                if day == 1:
+                    shock = np.random.normal(0, 1)
+                else:
+                    # Simple autocorrelation based on Hurst
+                    autocorr = 2 * hurst - 1  # Range: [-1, 1]
+                    prev_shock = (np.log(forecast_prices[sim, day-1]) - 
+                                 np.log(forecast_prices[sim, day-2])) / adjusted_sigma if day > 1 else 0
+                    shock = autocorr * prev_shock + np.sqrt(1 - autocorr**2) * np.random.normal(0, 1)
+                
+                # Geometric Brownian Motion step
+                drift = adjusted_mu - 0.5 * adjusted_sigma**2
+                diffusion = adjusted_sigma * shock
+                
+                forecast_prices[sim, day] = forecast_prices[sim, day-1] * np.exp(drift * dt + diffusion * np.sqrt(dt))
+        
+        # Calculate statistics
+        mean_forecast = np.mean(forecast_prices, axis=0)
+        median_forecast = np.median(forecast_prices, axis=0)
+        std_forecast = np.std(forecast_prices, axis=0)
+        
+        # Confidence intervals (95%)
+        ci_lower_95 = np.percentile(forecast_prices, 2.5, axis=0)
+        ci_upper_95 = np.percentile(forecast_prices, 97.5, axis=0)
+        
+        # Confidence intervals (68% - 1 sigma)
+        ci_lower_68 = np.percentile(forecast_prices, 16, axis=0)
+        ci_upper_68 = np.percentile(forecast_prices, 84, axis=0)
+        
+        # Calculate expected return and risk
+        expected_return = (mean_forecast[-1] - current_price) / current_price * 100
+        expected_volatility = (std_forecast[-1] / current_price) * 100
+        
+        # Determine forecast direction
+        if hurst > 0.55:
+            forecast_bias = 'TRENDING'
+            if adjusted_mu > 0:
+                direction = 'BULLISH'
+            else:
+                direction = 'BEARISH'
+        elif hurst < 0.45:
+            forecast_bias = 'MEAN_REVERTING'
+            # Mean reversion: expect return to long-term average
+            long_term_mean = np.mean(self.prices[-100:]) if len(self.prices) >= 100 else np.mean(self.prices)
+            if current_price > long_term_mean:
+                direction = 'BEARISH'
+            else:
+                direction = 'BULLISH'
+        else:
+            forecast_bias = 'RANDOM_WALK'
+            direction = 'NEUTRAL'
+        
+        # Generate dates for forecast
+        import pandas as pd
+        last_date = self.data.index[-1]
+        forecast_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), 
+                                       periods=forecast_days, freq='D')
+        
+        return {
+            'forecast_days': forecast_days,
+            'current_price': float(current_price),
+            'hurst_exponent': float(hurst),
+            'fractal_dimension': float(fractal_dim),
+            'forecast_bias': forecast_bias,
+            'direction': direction,
+            'expected_return': float(expected_return),
+            'expected_volatility': float(expected_volatility),
+            'dates': forecast_dates.tolist(),
+            'mean_forecast': mean_forecast.tolist(),
+            'median_forecast': median_forecast.tolist(),
+            'ci_lower_95': ci_lower_95.tolist(),
+            'ci_upper_95': ci_upper_95.tolist(),
+            'ci_lower_68': ci_lower_68.tolist(),
+            'ci_upper_68': ci_upper_68.tolist(),
+            'target_price_30d': float(mean_forecast[-1]),
+            'best_case_30d': float(ci_upper_95[-1]),
+            'worst_case_30d': float(ci_lower_95[-1]),
+            'confidence_level': 'HIGH' if abs(hurst - 0.5) > 0.2 else 'MEDIUM' if abs(hurst - 0.5) > 0.1 else 'LOW'
+        }
+
 
 class StatisticalEstimation:
     """
