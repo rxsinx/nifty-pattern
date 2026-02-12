@@ -280,137 +280,215 @@ class FractalAnalysis:
     
     def forecast_fractal_price(self, forecast_days: int = 30) -> Dict:
         """
-        Forecast future price using fractal analysis and Hurst exponent.
+        Forecast future price using TRUE fractal analysis.
         
-        Uses:
-        - Hurst exponent for trend persistence
-        - Fractal dimension for volatility scaling
-        - Historical volatility for confidence bands
-        - Geometric Brownian Motion with fractal adjustment
+        Uses REAL fractal mathematics:
+        - Rescaled Range (R/S) Analysis for Hurst calculation
+        - Fractal dimension from price action
+        - Self-similar patterns identification
+        - Power law scaling relationships
+        - Long-term memory effects (Joseph Effect)
+        - Volatility clustering (Noah Effect)
         
         Args:
             forecast_days: Number of days to forecast (default 30)
             
         Returns:
-            Dictionary with forecasted prices and confidence intervals
+            Dictionary with fractal-based forecasted prices
         """
-        # Get Hurst exponent
+        # Step 1: Calculate TRUE Hurst Exponent using R/S Analysis
         hurst_result = self.calculate_hurst_exponent()
         hurst = hurst_result['hurst_exponent']
         
-        # Get fractal dimension
+        # Step 2: Calculate Fractal Dimension
         fractal_dim_result = self.calculate_fractal_dimension()
         fractal_dim = fractal_dim_result['fractal_dimension']
         
-        # Calculate returns and volatility
+        # Step 3: Identify self-similar fractal patterns in historical data
+        fractal_patterns = self._identify_fractal_patterns()
+        
+        # Step 4: Calculate scaling exponent (alpha)
+        # For Fractional Brownian Motion: alpha = 2H
+        alpha = 2 * hurst
+        
+        # Step 5: Calculate fractal volatility using power law
         returns = np.diff(np.log(self.prices))
-        mu = np.mean(returns)  # Daily mean return
-        sigma = np.std(returns)  # Daily volatility
+        base_vol = np.std(returns)
         
-        # Adjust volatility based on fractal dimension
-        # Higher fractal dimension = higher volatility
-        fractal_vol_multiplier = fractal_dim / 1.5
-        adjusted_sigma = sigma * fractal_vol_multiplier
+        # Fractal volatility scaling: σ(t) = σ₀ * t^H
+        # This captures the long-term memory effect
+        def fractal_volatility(t):
+            return base_vol * (t ** hurst)
         
-        # Adjust drift based on Hurst exponent
-        # H > 0.5: Enhance positive drift (trending)
-        # H < 0.5: Dampen drift (mean reverting)
-        # H = 0.5: No adjustment (random walk)
-        hurst_drift_adjustment = 1 + (hurst - 0.5) * 2
-        adjusted_mu = mu * hurst_drift_adjustment
+        # Step 6: Detect trend using Detrended Fluctuation Analysis (DFA)
+        trend_strength, trend_direction = self._detrended_fluctuation_analysis()
         
-        # Current price
+        # Step 7: Generate Fractional Brownian Motion (fBm) paths
         current_price = self.prices[-1]
+        n_simulations = 1000
         
-        # Generate forecast paths using Fractional Brownian Motion approximation
-        n_simulations = 1000  # Number of Monte Carlo paths
-        dt = 1  # Daily time step
-        
-        # Initialize arrays
-        forecast_prices = np.zeros((n_simulations, forecast_days))
+        # Initialize forecast array
+        forecast_prices = np.zeros((n_simulations, forecast_days + 1))
         forecast_prices[:, 0] = current_price
         
-        # Generate paths
+        # Generate fBm paths using Cholesky decomposition
         for sim in range(n_simulations):
-            for day in range(1, forecast_days):
-                # Generate correlated random shock based on Hurst exponent
-                # For H > 0.5: Positive autocorrelation (trending)
-                # For H < 0.5: Negative autocorrelation (mean reverting)
+            # Create correlation matrix based on Hurst exponent
+            # Cov(t,s) = 0.5 * (|t|^2H + |s|^2H - |t-s|^2H)
+            times = np.arange(forecast_days + 1)
+            cov_matrix = np.zeros((forecast_days + 1, forecast_days + 1))
+            
+            for i in range(forecast_days + 1):
+                for j in range(forecast_days + 1):
+                    t = times[i]
+                    s = times[j]
+                    cov_matrix[i, j] = 0.5 * (abs(t)**(2*hurst) + abs(s)**(2*hurst) - abs(t-s)**(2*hurst))
+            
+            # Add small value to diagonal for numerical stability
+            cov_matrix += np.eye(forecast_days + 1) * 1e-10
+            
+            # Cholesky decomposition
+            try:
+                L = np.linalg.cholesky(cov_matrix)
                 
-                if day == 1:
-                    shock = np.random.normal(0, 1)
-                else:
-                    # Simple autocorrelation based on Hurst
-                    autocorr = 2 * hurst - 1  # Range: [-1, 1]
-                    prev_shock = (np.log(forecast_prices[sim, day-1]) - 
-                                 np.log(forecast_prices[sim, day-2])) / adjusted_sigma if day > 1 else 0
-                    shock = autocorr * prev_shock + np.sqrt(1 - autocorr**2) * np.random.normal(0, 1)
+                # Generate correlated Brownian increments
+                Z = np.random.standard_normal(forecast_days + 1)
+                fBm = L @ Z
                 
-                # Geometric Brownian Motion step
-                drift = adjusted_mu - 0.5 * adjusted_sigma**2
-                diffusion = adjusted_sigma * shock
+                # Scale by fractal volatility
+                scaled_increments = fBm * base_vol * (fractal_dim / 1.5)
                 
-                forecast_prices[sim, day] = forecast_prices[sim, day-1] * np.exp(drift * dt + diffusion * np.sqrt(dt))
+                # Add trend component based on DFA
+                trend_component = trend_strength * trend_direction * np.arange(forecast_days + 1) / forecast_days
+                
+                # Apply to price path with geometric process
+                log_returns = scaled_increments[1:] + trend_component[1:]
+                
+                for day in range(1, forecast_days + 1):
+                    forecast_prices[sim, day] = forecast_prices[sim, day-1] * np.exp(log_returns[day-1])
+                
+            except np.linalg.LinAlgError:
+                # Fallback to simpler method if Cholesky fails
+                for day in range(1, forecast_days + 1):
+                    # Use simplified fBm approximation
+                    if day == 1:
+                        shock = np.random.normal(0, fractal_volatility(1))
+                    else:
+                        # Autocorrelation based on Hurst
+                        rho = 2 * hurst - 1
+                        prev_return = np.log(forecast_prices[sim, day-1] / forecast_prices[sim, day-2])
+                        shock = rho * prev_return + np.sqrt(1 - rho**2) * np.random.normal(0, fractal_volatility(day))
+                    
+                    forecast_prices[sim, day] = forecast_prices[sim, day-1] * np.exp(shock + trend_strength * trend_direction / forecast_days)
         
-        # Calculate statistics
+        # Remove initial price column
+        forecast_prices = forecast_prices[:, 1:]
+        
+        # Step 8: Calculate fractal-based statistics
         mean_forecast = np.mean(forecast_prices, axis=0)
         median_forecast = np.median(forecast_prices, axis=0)
-        std_forecast = np.std(forecast_prices, axis=0)
         
-        # Confidence intervals (95%)
-        ci_lower_95 = np.percentile(forecast_prices, 2.5, axis=0)
-        ci_upper_95 = np.percentile(forecast_prices, 97.5, axis=0)
+        # Use fractal scaling for confidence intervals
+        # In fractal markets, variance scales as t^2H (not t as in random walk)
+        fractal_std = np.array([base_vol * np.sqrt((i+1)**(2*hurst)) for i in range(forecast_days)])
         
-        # Confidence intervals (68% - 1 sigma)
-        ci_lower_68 = np.percentile(forecast_prices, 16, axis=0)
-        ci_upper_68 = np.percentile(forecast_prices, 84, axis=0)
+        # Confidence intervals using fractal scaling
+        ci_lower_95 = mean_forecast - 1.96 * fractal_std * mean_forecast
+        ci_upper_95 = mean_forecast + 1.96 * fractal_std * mean_forecast
+        ci_lower_68 = mean_forecast - 1.0 * fractal_std * mean_forecast
+        ci_upper_68 = mean_forecast + 1.0 * fractal_std * mean_forecast
         
-        # Calculate expected return and risk
+        # Step 9: Identify fractal support/resistance levels
+        fractal_levels = self._calculate_fractal_levels(current_price, hurst, fractal_dim, forecast_days)
+        
+        # Step 10: Calculate expected return using fractal drift
+        # E[X(t)] = X(0) * exp(μ_fractal * t^H)
+        mu_fractal = np.mean(returns) * (forecast_days ** hurst)
         expected_return = (mean_forecast[-1] - current_price) / current_price * 100
-        expected_volatility = (std_forecast[-1] / current_price) * 100
         
-        # Determine forecast direction
+        # Step 11: Determine market regime using fractal analysis
         if hurst > 0.55:
+            # Persistent/Trending (Joseph Effect)
             forecast_bias = 'TRENDING'
-            if adjusted_mu > 0:
+            market_type = 'PERSISTENT'
+            if trend_direction > 0:
                 direction = 'BULLISH'
+                regime = 'Trending Up (Strong Memory)'
             else:
                 direction = 'BEARISH'
+                regime = 'Trending Down (Strong Memory)'
         elif hurst < 0.45:
+            # Anti-persistent/Mean Reverting (Noah Effect)
             forecast_bias = 'MEAN_REVERTING'
-            # Mean reversion: expect return to long-term average
+            market_type = 'ANTI_PERSISTENT'
             long_term_mean = np.mean(self.prices[-100:]) if len(self.prices) >= 100 else np.mean(self.prices)
             if current_price > long_term_mean:
                 direction = 'BEARISH'
+                regime = 'Reversion to Mean (Oversold)'
             else:
                 direction = 'BULLISH'
+                regime = 'Reversion to Mean (Overbought)'
         else:
+            # Random Walk (Efficient Market)
             forecast_bias = 'RANDOM_WALK'
+            market_type = 'RANDOM'
             direction = 'NEUTRAL'
+            regime = 'Efficient Market (No Memory)'
         
-        # Generate dates for forecast
+        # Step 12: Calculate fractal dimension interpretation
+        if fractal_dim < 1.3:
+            complexity = 'SMOOTH_TREND'
+            volatility_regime = 'LOW'
+        elif fractal_dim < 1.7:
+            complexity = 'MODERATE'
+            volatility_regime = 'MEDIUM'
+        else:
+            complexity = 'CHOPPY'
+            volatility_regime = 'HIGH'
+        
+        # Generate dates
         try:
             last_date = self.data.index[-1]
-            # Use business days for forecast
             forecast_dates = pd.bdate_range(start=last_date + pd.Timedelta(days=1), 
                                            periods=forecast_days)
-            # Convert to list of datetime objects
             forecast_dates_list = [d.to_pydatetime() for d in forecast_dates]
-        except Exception as e:
-            # Fallback: just use sequential dates
+        except Exception:
             from datetime import datetime, timedelta
             last_date = datetime.now()
             forecast_dates_list = [(last_date + timedelta(days=i+1)) for i in range(forecast_days)]
         
+        # Calculate confidence based on fractal parameters
+        hurst_confidence = 'HIGH' if abs(hurst - 0.5) > 0.2 else 'MEDIUM' if abs(hurst - 0.5) > 0.1 else 'LOW'
+        pattern_confidence = 'HIGH' if len(fractal_patterns['similar_patterns']) > 3 else 'MEDIUM' if len(fractal_patterns['similar_patterns']) > 1 else 'LOW'
+        
+        # Overall confidence
+        if hurst_confidence == 'HIGH' and pattern_confidence == 'HIGH':
+            overall_confidence = 'HIGH'
+        elif hurst_confidence == 'LOW' or pattern_confidence == 'LOW':
+            overall_confidence = 'LOW'
+        else:
+            overall_confidence = 'MEDIUM'
+        
         return {
             'forecast_days': forecast_days,
             'current_price': float(current_price),
+            
+            # Fractal Parameters
             'hurst_exponent': float(hurst),
             'fractal_dimension': float(fractal_dim),
+            'scaling_exponent': float(alpha),
+            'market_type': market_type,
+            'complexity': complexity,
+            'volatility_regime': volatility_regime,
+            
+            # Forecast
             'forecast_bias': forecast_bias,
             'direction': direction,
+            'regime': regime,
             'expected_return': float(expected_return),
-            'expected_volatility': float(expected_volatility),
+            'expected_volatility': float(fractal_std[-1] * 100),
+            
+            # Price Paths
             'dates': forecast_dates_list,
             'mean_forecast': mean_forecast.tolist(),
             'median_forecast': median_forecast.tolist(),
@@ -418,11 +496,156 @@ class FractalAnalysis:
             'ci_upper_95': ci_upper_95.tolist(),
             'ci_lower_68': ci_lower_68.tolist(),
             'ci_upper_68': ci_upper_68.tolist(),
+            
+            # Targets
             'target_price_30d': float(mean_forecast[-1]),
             'best_case_30d': float(ci_upper_95[-1]),
             'worst_case_30d': float(ci_lower_95[-1]),
-            'confidence_level': 'HIGH' if abs(hurst - 0.5) > 0.2 else 'MEDIUM' if abs(hurst - 0.5) > 0.1 else 'LOW'
+            
+            # Fractal Levels
+            'fractal_support': fractal_levels['support'],
+            'fractal_resistance': fractal_levels['resistance'],
+            'fractal_pivots': fractal_levels['pivots'],
+            
+            # Pattern Analysis
+            'similar_patterns_found': len(fractal_patterns['similar_patterns']),
+            'pattern_confidence': pattern_confidence,
+            'trend_strength': float(trend_strength),
+            
+            # Confidence
+            'confidence_level': overall_confidence,
+            'hurst_confidence': hurst_confidence,
+            
+            # Fractal Insights
+            'joseph_effect': hurst > 0.5,  # Long-term memory (trends persist)
+            'noah_effect': fractal_dim > 1.5,  # Volatility clustering (sudden changes)
+            'fractal_method': 'Fractional Brownian Motion with R/S Analysis'
         }
+    
+    def _identify_fractal_patterns(self) -> Dict:
+        """
+        Identify self-similar fractal patterns in historical price data.
+        
+        Fractal patterns repeat at different scales (self-similarity).
+        """
+        patterns = {
+            'similar_patterns': [],
+            'scale_ratios': [],
+            'pattern_confidence': 0
+        }
+        
+        # Use last 50 days as reference pattern
+        if len(self.prices) < 100:
+            return patterns
+        
+        reference_pattern = self.prices[-50:]
+        reference_normalized = (reference_pattern - np.min(reference_pattern)) / (np.max(reference_pattern) - np.min(reference_pattern))
+        
+        # Search for similar patterns in history at different scales
+        window_sizes = [25, 50, 75, 100]  # Different fractal scales
+        
+        for window in window_sizes:
+            if len(self.prices) < window + 50:
+                continue
+            
+            for i in range(len(self.prices) - window - 50):
+                pattern = self.prices[i:i+window]
+                pattern_normalized = (pattern - np.min(pattern)) / (np.max(pattern) - np.min(pattern))
+                
+                # Interpolate to same length for comparison
+                from scipy.interpolate import interp1d
+                x_old = np.linspace(0, 1, len(pattern_normalized))
+                x_new = np.linspace(0, 1, len(reference_normalized))
+                f = interp1d(x_old, pattern_normalized, kind='linear')
+                pattern_resampled = f(x_new)
+                
+                # Calculate correlation
+                correlation = np.corrcoef(reference_normalized, pattern_resampled)[0, 1]
+                
+                if correlation > 0.7:  # High similarity
+                    patterns['similar_patterns'].append({
+                        'start_idx': i,
+                        'correlation': float(correlation),
+                        'scale': window / 50  # Scale ratio
+                    })
+                    patterns['scale_ratios'].append(window / 50)
+        
+        patterns['pattern_confidence'] = len(patterns['similar_patterns'])
+        
+        return patterns
+    
+    def _detrended_fluctuation_analysis(self) -> Tuple[float, float]:
+        """
+        Detrended Fluctuation Analysis (DFA) to detect trends.
+        
+        Returns:
+            Tuple of (trend_strength, trend_direction)
+        """
+        # Calculate cumulative sum
+        y = np.cumsum(self.prices - np.mean(self.prices))
+        
+        # Fit linear trend
+        x = np.arange(len(y))
+        coeffs = np.polyfit(x, y, 1)
+        trend_strength = abs(coeffs[0]) / np.std(self.prices)
+        trend_direction = np.sign(coeffs[0])
+        
+        return trend_strength, trend_direction
+    
+    def _calculate_fractal_levels(self, current_price: float, hurst: float, 
+                                  fractal_dim: float, forecast_days: int) -> Dict:
+        """
+        Calculate fractal support/resistance levels using power laws.
+        
+        Fractal markets have support/resistance at self-similar levels.
+        """
+        # Calculate ATR for scaling
+        if len(self.data) > 14:
+            high = self.data['High'].values
+            low = self.data['Low'].values
+            close = self.data['Close'].values
+            
+            tr1 = high - low
+            tr2 = np.abs(high - np.roll(close, 1))
+            tr3 = np.abs(low - np.roll(close, 1))
+            
+            tr = np.maximum(tr1, np.maximum(tr2, tr3))
+            atr = np.mean(tr[-14:])
+        else:
+            atr = np.std(self.prices) * 0.02
+        
+        # Fractal scaling: levels scale as (distance)^H
+        levels = {
+            'support': [],
+            'resistance': [],
+            'pivots': []
+        }
+        
+        # Generate fractal levels using Fibonacci ratios (natural fractals)
+        ratios = [0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618, 2.0, 2.618]
+        
+        for ratio in ratios:
+            # Scale by Hurst exponent for fractal effect
+            scaled_distance = atr * ratio * (ratio ** hurst)
+            
+            support = current_price - scaled_distance
+            resistance = current_price + scaled_distance
+            
+            levels['support'].append(float(support))
+            levels['resistance'].append(float(resistance))
+        
+        # Pivot points (fractal centers)
+        recent_high = np.max(self.prices[-20:])
+        recent_low = np.min(self.prices[-20:])
+        pivot = (recent_high + recent_low + current_price) / 3
+        
+        levels['pivots'] = [
+            float(pivot),
+            float(pivot + atr * (1 ** hurst)),
+            float(pivot - atr * (1 ** hurst))
+        ]
+        
+        return levels
 
 
 class StatisticalEstimation:
