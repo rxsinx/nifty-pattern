@@ -435,7 +435,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 x1=box_end,
                 y0=box_bottom,
                 y1=box_top,
-                line=dict(color='#4169E1', width=3, dash='dash'),
+                line=dict(color='black', width=1, dash='dash'),
                 fillcolor='rgba(65, 105, 225, 0.1)',
                 row=1, col=1
             )
@@ -486,7 +486,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 x1=zone_end,
                 y0=ob_low,
                 y1=ob_high,
-                line=dict(color=border_color, width=2, dash='dot'),
+                line=dict(color=border_color, width=1, dash='dot'),
                 fillcolor=ob_color,
                 row=1, col=1
             )
@@ -497,10 +497,10 @@ def draw_patterns_on_chart(fig, patterns, df):
                 y=(ob_high + ob_low) / 2,
                 text=f"<b>OB</b>",
                 showarrow=False,
-                font=dict(color=border_color, size=12, family='Arial Black'),
+                font=dict(color=border_color, size=10, family='Arial Black'),
                 bgcolor='rgba(255, 255, 255, 0.9)',
                 bordercolor=border_color,
-                borderwidth=2,
+                borderwidth=1,
                 xanchor='left',
                 row=1, col=1
             )
@@ -1366,7 +1366,7 @@ def main():
                 # Charts
                 st.markdown('<div class="sub-header">📊 Technical Analysis Charts</div>', unsafe_allow_html=True)
                 
-                chart_tab1, chart_tab2, chart_tab3 = st.tabs(["Price Action & Indicators", "Volume Profile", "Quantitative Analysis"])
+                chart_tab1, chart_tab2 = st.tabs(["Price Action & Indicators", "Volume Profile"])
                 
                 with chart_tab1:
                     # Create chart with or without patterns based on user preference
