@@ -841,7 +841,7 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
         y=historical_data['Close'],
         mode='lines',
         name='Historical Price',
-        line=dict(color='#2E86AB', width=2)
+        line=dict(color='#2E86AB', width=2),
         legendgroup='group1'
         ),
         row=1, col=1
