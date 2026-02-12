@@ -793,8 +793,8 @@ def create_volume_profile_chart(analyzer):
 def main():
     """Main Streamlit application"""
     
-    st.markdown('<div class="main-header">🎯 Indian Equity Market Analyzer</div>', unsafe_allow_html=True)
-    st.markdown('<p style="text-align: center; color: gray;">Master Trader Grade Analysis</p>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🎯 Indian Equity Market Pattern analysis</div>', unsafe_allow_html=True)
+    st.markdown('<p style="text-align: center; color: gray;">Master Pattern Analysis</p>', unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
