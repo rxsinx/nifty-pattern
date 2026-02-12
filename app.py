@@ -1393,28 +1393,7 @@ def main():
                         st.metric("Value Area Low", f"₹{vp['value_area_low']:.2f}")
                 
                                     
-                    # Volatility Regimes
-                    st.markdown("**Volatility Regime Analysis**")
                     
-                    regimes = vol_results['regimes']
-                    current_regime = regimes['Regime'].iloc[-1] if not regimes.empty else 'UNKNOWN'
-                    current_vol = regimes['Volatility'].iloc[-1] if not regimes.empty else 0
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Current Regime", current_regime)
-                    with col2:
-                        st.metric("Current Volatility", f"{current_vol:.2f}%")
-                    with col3:
-                        regime_changes = regimes['Regime_Change'].sum()
-                        st.metric("Regime Changes (Total)", regime_changes)
-                    
-                    if current_regime == 'HIGH':
-                        st.error("⚠️ **HIGH VOLATILITY REGIME** - Increase position sizing caution, widen stops")
-                    elif current_regime == 'LOW':
-                        st.success("✅ **LOW VOLATILITY REGIME** - Favorable for entries, tighter stops possible")
-                    else:
-                        st.info("📊 **MEDIUM VOLATILITY REGIME** - Normal market conditions")
                 
                 # Key Metrics Table
                 st.markdown('<div class="sub-header">📋 Key Technical Indicators</div>', unsafe_allow_html=True)
