@@ -12,7 +12,7 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import OnBalanceVolumeIndicator
 import warnings
 from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
-from quantitative_analysis import FractalAnalysis, StatisticalEstimation, VolatilityModelling, run_full_quantitative_analysis
+#from quantitative_analysis import FractalAnalysis, StatisticalEstimation, VolatilityModelling, run_full_quantitative_analysis
 
 warnings.filterwarnings('ignore')
 
