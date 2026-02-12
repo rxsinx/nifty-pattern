@@ -435,7 +435,7 @@ def draw_patterns_on_chart(fig, patterns, df):
                 x1=box_end,
                 y0=box_bottom,
                 y1=box_top,
-                line=dict(color='#4169E1', width=3, dash='dash'),
+                line=dict(color='#4169E1', width=1.5, dash='dash'),
                 fillcolor='rgba(65, 105, 225, 0.1)',
                 row=1, col=1
             )
@@ -1584,47 +1584,160 @@ def main():
                     with col4:
                         st.metric("Confidence Level", forecast['confidence_level'])
                         st.metric("Expected Volatility", f"{forecast['expected_volatility']:.2f}%")
+
+                    # Fractal Analysis Details
+                    st.markdown("---")
+                    st.markdown("#### 📐 Fractal Analysis Parameters")
+                    
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    
+                    with col1:
+                        st.metric("Hurst Exponent", f"{forecast['hurst_exponent']:.3f}")
+                        if forecast['joseph_effect']:
+                            st.success("✅ Joseph Effect")
+                        else:
+                            st.info("ℹ️ No Joseph Effect")
+                    
+                    with col2:
+                        st.metric("Fractal Dimension", f"{forecast['fractal_dimension']:.3f}")
+                        if forecast['noah_effect']:
+                            st.warning("⚠️ Noah Effect")
+                        else:
+                            st.info("ℹ️ No Noah Effect")
+                    
+                    with col3:
+                        st.metric("Scaling Exponent (α)", f"{forecast['scaling_exponent']:.3f}")
+                        st.metric("Complexity", forecast['complexity'])
+                    
+                    with col4:
+                        st.metric("Similar Patterns", forecast['similar_patterns_found'])
+                        st.metric("Pattern Confidence", forecast['pattern_confidence'])
+                    
+                    with col5:
+                        st.metric("Trend Strength", f"{forecast['trend_strength']:.3f}")
+                        st.metric("Method", "fBm + R/S")
+                    
+                    # Fractal Support/Resistance Levels
+                    st.markdown("---")
+                    st.markdown("#### 📊 Fractal Support & Resistance Levels")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**🔻 Fractal Support Levels:**")
+                        supports = forecast['fractal_support'][:5]  # Top 5
+                        for i, support in enumerate(supports, 1):
+                            st.markdown(f"{i}. ₹{support:.2f}")
+                    
+                    with col2:
+                        st.markdown("**🔺 Fractal Resistance Levels:**")
+                        resistances = forecast['fractal_resistance'][:5]  # Top 5
+                        for i, resistance in enumerate(resistances, 1):
+                            st.markdown(f"{i}. ₹{resistance:.2f}")
+                    
+                    st.markdown("**📍 Fractal Pivot Points:**")
+                    pivots = forecast['fractal_pivots']
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Main Pivot", f"₹{pivots[0]:.2f}")
+                    with col2:
+                        st.metric("Upper Pivot", f"₹{pivots[1]:.2f}")
+                    with col3:
+                        st.metric("Lower Pivot", f"₹{pivots[2]:.2f}")
                     
                     # Forecast interpretation
+                    st.markdown("---")
                     if forecast['direction'] == 'BULLISH':
-                        st.success(f"📈 **Bullish Forecast**: Expected to reach ₹{forecast['target_price_30d']:.2f} in 30 days ({forecast['expected_return']:.2f}% gain)")
+                        st.success(f"📈 **{forecast['regime']}**: Expected to reach ₹{forecast['target_price_30d']:.2f} in 30 days ({forecast['expected_return']:.2f}% gain)")
                     elif forecast['direction'] == 'BEARISH':
-                        st.error(f"📉 **Bearish Forecast**: Expected to decline to ₹{forecast['target_price_30d']:.2f} in 30 days ({forecast['expected_return']:.2f}% loss)")
+                        st.error(f"📉 **{forecast['regime']}**: Expected to decline to ₹{forecast['target_price_30d']:.2f} in 30 days ({forecast['expected_return']:.2f}% loss)")
                     else:
-                        st.info(f"📊 **Neutral Forecast**: Price expected around ₹{forecast['target_price_30d']:.2f} in 30 days")
+                        st.info(f"📊 **{forecast['regime']}**: Price expected around ₹{forecast['target_price_30d']:.2f} in 30 days")
                     
-                    # Forecast explanation
-                    with st.expander("ℹ️ How Fractal Forecast Works"):
+                    # Fractal explanation
+                    with st.expander("ℹ️ Understanding True Fractal Analysis"):
                         st.markdown(f"""
-                        **Fractal-Based Price Forecasting:**
+                        **TRUE Fractal-Based Price Forecasting:**
                         
-                        This forecast uses advanced fractal mathematics to predict future prices:
+                        This forecast uses real fractal mathematics from Mandelbrot's Fractal Market Hypothesis:
                         
-                        1. **Hurst Exponent (H = {forecast['hurst_exponent']:.3f})**:
-                           - Measures trend persistence
-                           - H > 0.5: Trending market (current trend likely continues)
-                           - H < 0.5: Mean-reverting market (price likely reverses)
-                           - H ≈ 0.5: Random walk (unpredictable)
+                        ### 1. **Hurst Exponent (H = {forecast['hurst_exponent']:.3f})**
+                        Calculated using **Rescaled Range (R/S) Analysis**:
+                        - **H > 0.5**: Persistent/Trending (momentum continues)
+                        - **H < 0.5**: Anti-persistent/Mean-reverting (reversals likely)
+                        - **H = 0.5**: Random walk (efficient market)
                         
-                        2. **Fractal Dimension (FD = {forecast['fractal_dimension']:.3f})**:
-                           - Measures market complexity
-                           - Low FD: Smooth trend (lower volatility)
-                           - High FD: Choppy market (higher volatility)
+                        **Your Market: {forecast['market_type']}**
                         
-                        3. **Monte Carlo Simulation**:
-                           - 1,000 price paths simulated
-                           - Incorporates historical volatility
-                           - Accounts for fractal properties
+                        ### 2. **Fractal Dimension (FD = {forecast['fractal_dimension']:.3f})**
+                        Measures market complexity:
+                        - **FD < 1.3**: Smooth, strong trend
+                        - **FD ≈ 1.5**: Random walk
+                        - **FD > 1.7**: Choppy, high volatility
                         
-                        4. **Confidence Intervals**:
-                           - 68% CI: Price has 68% chance to be in this range
-                           - 95% CI: Price has 95% chance to be in this range
+                        **Your Market: {forecast['complexity']}**
                         
-                        **Current Forecast Bias: {forecast['forecast_bias']}**
+                        ### 3. **Joseph Effect** {'✅ DETECTED' if forecast['joseph_effect'] else '❌ NOT DETECTED'}
+                        Long-term memory in price trends (biblical 7 good years, 7 bad years).
+                        When H > 0.5, trends persist longer than expected.
                         
-                        ⚠️ **Disclaimer**: This is a statistical model based on historical patterns. 
-                        Actual prices may differ due to unforeseen events, news, or market conditions.
-                        Always combine with fundamental analysis and risk management.
+                        ### 4. **Noah Effect** {'⚠️ DETECTED' if forecast['noah_effect'] else '✅ NOT DETECTED'}
+                        Volatility clustering and sudden regime changes.
+                        When FD > 1.5, expect sudden price jumps.
+                        
+                        ### 5. **Fractional Brownian Motion (fBm)**
+                        - Uses Cholesky decomposition for correlated paths
+                        - Covariance: Cov(t,s) = 0.5 × (|t|^2H + |s|^2H - |t-s|^2H)
+                        - 1,000 Monte Carlo simulations
+                        - Accounts for long-term memory effects
+                        
+                        ### 6. **Self-Similar Pattern Detection**
+                        Found **{forecast['similar_patterns_found']} similar patterns** in history.
+                        Fractal markets repeat patterns at different scales.
+                        
+                        ### 7. **Detrended Fluctuation Analysis (DFA)**
+                        Trend Strength: **{forecast['trend_strength']:.3f}**
+                        Detects non-linear trends invisible to linear regression.
+                        
+                        ### 8. **Fractal Support/Resistance**
+                        Calculated using power laws: Level = Price ± ATR × Ratio^H
+                        These are self-similar levels where price tends to react.
+                        
+                        ### 9. **Scaling Exponent (α = {forecast['scaling_exponent']:.3f})**
+                        For fBm: α = 2H
+                        Determines how volatility scales with time: σ(t) = σ₀ × t^H
+                        
+                        ### **Key Differences from Random Walk:**
+                        
+                        ❌ **Random Walk Assumptions:**
+                        - Returns are independent
+                        - Variance scales linearly with time (σ² ∝ t)
+                        - No memory effects
+                        
+                        ✅ **Fractal Market Reality:**
+                        - Returns have long-term correlations
+                        - Variance scales as σ² ∝ t^2H
+                        - Strong memory effects ({forecast['market_type']})
+                        - Self-similarity across time scales
+                        - Volatility clustering
+                        
+                        ### **Trading Implications:**
+                        
+                        **Current Regime:** {forecast['regime']}
+                        
+                        {'**Strategy: Trend Following**' if forecast['hurst_exponent'] > 0.55 else '**Strategy: Mean Reversion**' if forecast['hurst_exponent'] < 0.45 else '**Strategy: Diversification**'}
+                        {'- Ride the trend with trailing stops' if forecast['hurst_exponent'] > 0.55 else '- Buy dips, sell rallies' if forecast['hurst_exponent'] < 0.45 else '- Market is random, use risk management'}
+                        {'- Trends persist longer than expected' if forecast['hurst_exponent'] > 0.55 else '- Expect reversals to mean' if forecast['hurst_exponent'] < 0.45 else '- No edge from trend/reversion'}
+                        
+                        ⚠️ **Risk Warning:** 
+                        Fractal analysis shows market has {'strong memory' if abs(forecast['hurst_exponent'] - 0.5) > 0.2 else 'weak memory'}.
+                        Volatility {'clusters' if forecast['noah_effect'] else 'is stable'} - adjust position sizing accordingly.
+                        
+                        📚 **Academic Foundation:**
+                        - Mandelbrot (1963): Fractal Market Hypothesis
+                        - Hurst (1951): Long-term storage capacity of reservoirs
+                        - Peters (1994): Fractal Market Analysis
+                        - Peng (1994): Detrended Fluctuation Analysis
                         """)
                     
                     # Fractal Analysis Section
