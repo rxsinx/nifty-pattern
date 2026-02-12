@@ -1,6 +1,6 @@
 # 📈 Indian Equity Market Analyzer Pro
 
-Professional-grade technical analysis tool for Indian stock market with advanced pattern detection based on master trader strategies (Dan Zanger & Qullamaggie).
+Professional-grade technical analysis tool for Indian stock market with advanced pattern .
 
 ## 🎯 Live Demo
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://nifty-pattern.streamlit.app/)
