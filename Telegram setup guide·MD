@@ -1,0 +1,621 @@
+# Telegram Bot Setup Guide
+# Indian Equity Pattern Analyzer Bot
+
+## 📋 Table of Contents
+1. [Creating Your Telegram Bot](#creating-telegram-bot)
+2. [Local Setup](#local-setup)
+3. [Cloud Deployment Options](#cloud-deployment)
+4. [Usage Examples](#usage-examples)
+5. [Troubleshooting](#troubleshooting)
+
+---
+
+## 1. Creating Your Telegram Bot
+
+### Step 1: Talk to BotFather
+
+1. Open Telegram and search for **@BotFather**
+2. Start a chat and send: `/newbot`
+3. Follow the prompts:
+   - Enter bot name: `Indian Equity Analyzer`
+   - Enter bot username: `IndianEquityBot` (must end with 'bot')
+4. **SAVE THE TOKEN** - it looks like:
+   ```
+   123456789:ABCdefGHIjklMNOpqrsTUVwxyz-1234567890
+   ```
+
+### Step 2: Configure Bot Settings
+
+Send these commands to @BotFather:
+
+```
+/setdescription - Set description
+/setabouttext - Set about text
+/setuserpic - Upload bot profile picture
+/setcommands - Set command list
+```
+
+**Suggested Commands:**
+```
+start - Start the bot and see welcome message
+help - Show help and available commands
+analyze - Get full analysis for a stock (e.g., /analyze RELIANCE.NS)
+patterns - List all 30 pattern detection methods
+forecast - Get 30-day price forecast (e.g., /forecast TCS.NS)
+```
+
+---
+
+## 2. Local Setup
+
+### Prerequisites
+- Python 3.9 or higher
+- pip (Python package manager)
+- Git (optional)
+
+### Installation Steps
+
+#### Step 1: Clone or Download Files
+
+```bash
+# Create project directory
+mkdir stock-telegram-bot
+cd stock-telegram-bot
+
+# Copy these files into the directory:
+# - telegram_bot.py
+# - pattern_detector.py
+# - quantitative_analysis.py
+# - requirements_telegram.txt
+```
+
+#### Step 2: Create Virtual Environment
+
+```bash
+# Create virtual environment
+python -m venv venv
+
+# Activate it
+# On Linux/Mac:
+source venv/bin/activate
+# On Windows:
+venv\Scripts\activate
+```
+
+#### Step 3: Install Dependencies
+
+```bash
+pip install -r requirements_telegram.txt
+```
+
+#### Step 4: Set Environment Variable
+
+**Linux/Mac:**
+```bash
+export TELEGRAM_BOT_TOKEN='123456789:ABCdefGHIjklMNOpqrsTUVwxyz-1234567890'
+```
+
+**Windows (Command Prompt):**
+```cmd
+set TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz-1234567890
+```
+
+**Windows (PowerShell):**
+```powershell
+$env:TELEGRAM_BOT_TOKEN='123456789:ABCdefGHIjklMNOpqrsTUVwxyz-1234567890'
+```
+
+**Using .env file (recommended):**
+```bash
+# Create .env file
+echo "TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz-1234567890" > .env
+```
+
+#### Step 5: Run the Bot
+
+```bash
+python telegram_bot.py
+```
+
+You should see:
+```
+Starting Telegram bot...
+Bot is running...
+```
+
+#### Step 6: Test the Bot
+
+1. Open Telegram
+2. Search for your bot username
+3. Send: `/start`
+4. Send: `RELIANCE` or `/analyze RELIANCE.NS`
+
+---
+
+## 3. Cloud Deployment Options
+
+### Option A: PythonAnywhere (Free Tier Available)
+
+**Pros:**
+- Free tier available
+- Easy to use
+- Good for low traffic
+
+**Setup:**
+
+1. **Sign up** at https://www.pythonanywhere.com
+2. **Upload files** via Files tab
+3. **Install dependencies:**
+   ```bash
+   pip3.10 install --user -r requirements_telegram.txt
+   ```
+4. **Create bash console** and run:
+   ```bash
+   export TELEGRAM_BOT_TOKEN='your_token'
+   python telegram_bot.py
+   ```
+5. **Keep alive**: Create scheduled task to restart bot daily
+
+**Note:** Free tier has some limitations. Upgrade for 24/7 uptime.
+
+---
+
+### Option B: Heroku (Recommended for Production)
+
+**Pros:**
+- Free tier available
+- Easy deployment
+- Automatic restarts
+- Good uptime
+
+**Setup:**
+
+1. **Install Heroku CLI**: https://devcenter.heroku.com/articles/heroku-cli
+
+2. **Create files:**
+
+**Procfile:**
+```
+worker: python telegram_bot.py
+```
+
+**runtime.txt:**
+```
+python-3.11.6
+```
+
+3. **Deploy:**
+```bash
+# Login to Heroku
+heroku login
+
+# Create app
+heroku create your-stock-bot
+
+# Set environment variable
+heroku config:set TELEGRAM_BOT_TOKEN='your_token'
+
+# Deploy
+git init
+git add .
+git commit -m "Initial commit"
+git push heroku master
+
+# Scale worker
+heroku ps:scale worker=1
+
+# Check logs
+heroku logs --tail
+```
+
+---
+
+### Option C: AWS EC2 (For High Volume)
+
+**Pros:**
+- Full control
+- Scalable
+- Professional
+
+**Setup:**
+
+1. **Launch EC2 instance** (Ubuntu 22.04 LTS)
+2. **SSH into instance**
+3. **Install dependencies:**
+   ```bash
+   sudo apt update
+   sudo apt install python3-pip -y
+   ```
+4. **Upload files** (use SCP or SFTP)
+5. **Install Python packages:**
+   ```bash
+   pip3 install -r requirements_telegram.txt
+   ```
+6. **Set environment variable:**
+   ```bash
+   echo 'export TELEGRAM_BOT_TOKEN="your_token"' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+7. **Run with systemd (background service):**
+
+Create `/etc/systemd/system/telegram-bot.service`:
+```ini
+[Unit]
+Description=Telegram Stock Bot
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/stock-bot
+Environment="TELEGRAM_BOT_TOKEN=your_token"
+ExecStart=/usr/bin/python3 /home/ubuntu/stock-bot/telegram_bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start:
+```bash
+sudo systemctl enable telegram-bot
+sudo systemctl start telegram-bot
+sudo systemctl status telegram-bot
+```
+
+---
+
+### Option D: Railway.app (Easiest Cloud Deploy)
+
+**Pros:**
+- Very easy
+- Free tier
+- GitHub integration
+
+**Setup:**
+
+1. **Sign up** at https://railway.app
+2. **New Project** → **Deploy from GitHub**
+3. **Add environment variable:**
+   - Key: `TELEGRAM_BOT_TOKEN`
+   - Value: Your token
+4. **Deploy** - automatic!
+
+---
+
+### Option E: Render.com (Good Alternative)
+
+**Pros:**
+- Free tier
+- Easy deployment
+- Good documentation
+
+**Setup:**
+
+1. **Sign up** at https://render.com
+2. **New** → **Background Worker**
+3. **Connect GitHub** or upload files
+4. **Build Command:** `pip install -r requirements_telegram.txt`
+5. **Start Command:** `python telegram_bot.py`
+6. **Environment Variables:**
+   - `TELEGRAM_BOT_TOKEN`: your_token
+7. **Deploy**
+
+---
+
+## 4. Usage Examples
+
+### Basic Stock Analysis
+```
+User: RELIANCE
+Bot: [Sends analysis with charts and PDF]
+```
+
+### Specific Analysis Command
+```
+User: /analyze TCS.NS
+Bot: [Full analysis report]
+```
+
+### Forecast Only
+```
+User: /forecast INFY.NS
+Bot: [30-day forecast with chart]
+```
+
+### List Patterns
+```
+User: /patterns
+Bot: [Shows all 30 patterns]
+```
+
+### Help
+```
+User: /help
+Bot: [Shows available commands]
+```
+
+---
+
+## 5. Bot Features
+
+### What Users Receive:
+
+1. **Instant Summary Message:**
+   - Current price
+   - 30-day target
+   - Expected return
+   - Pattern count
+   - Direction (Bullish/Bearish/Neutral)
+
+2. **Chart Images:**
+   - 30-day fractal forecast chart
+   - Technical indicators chart
+   - Both sent as photos
+
+3. **Comprehensive PDF Report:**
+   - Executive summary
+   - All detected patterns (30 methods)
+   - Quantitative analysis
+   - Fractal forecast details
+   - Charts embedded
+   - Professional formatting
+
+### Processing Time:
+- Simple forecast: 10-15 seconds
+- Full analysis: 30-60 seconds
+
+---
+
+## 6. Troubleshooting
+
+### Bot Not Responding
+
+**Check:**
+1. Token is correct
+2. Bot is running (`python telegram_bot.py`)
+3. Internet connection
+4. Bot has necessary permissions
+
+### "Could not fetch data" Error
+
+**Causes:**
+- Invalid stock symbol
+- Stock not on NSE/BSE
+- yfinance API issue
+- Network problem
+
+**Solution:**
+- Check symbol format (e.g., RELIANCE.NS)
+- Try different stock
+- Check yfinance status
+
+### PDF Generation Fails
+
+**Causes:**
+- Missing reportlab package
+- Insufficient disk space
+- Permission issues
+
+**Solution:**
+```bash
+pip install --upgrade reportlab
+```
+
+### Chart Images Not Showing
+
+**Causes:**
+- Missing kaleido package
+- plotly version mismatch
+
+**Solution:**
+```bash
+pip install --upgrade plotly kaleido
+```
+
+### Memory Issues
+
+**Solution:**
+- Use cloud deployment with more RAM
+- Process fewer patterns
+- Reduce forecast days
+
+---
+
+## 7. Customization Options
+
+### Modify Analysis Parameters
+
+In `telegram_bot.py`:
+
+```python
+# Change forecast period
+forecast = fractal.forecast_fractal_price(forecast_days=60)  # 60 days instead of 30
+
+# Change data period
+data = stock.history(period='2y')  # 2 years instead of 1
+```
+
+### Add Custom Commands
+
+```python
+async def custom_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Your custom command"""
+    await update.message.reply_text("Custom response")
+
+# Add to _setup_handlers():
+self.application.add_handler(CommandHandler("custom", self.custom_command))
+```
+
+### Modify Report Format
+
+Edit `generate_pdf_report()` method to customize PDF layout and content.
+
+---
+
+## 8. Security Best Practices
+
+### Protect Your Token
+```bash
+# Never commit token to Git
+echo ".env" >> .gitignore
+echo "*.pyc" >> .gitignore
+echo "__pycache__/" >> .gitignore
+```
+
+### Use Environment Variables
+```python
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+```
+
+### Rate Limiting (Optional)
+
+Add to bot class:
+```python
+from functools import wraps
+from time import time
+
+def rate_limit(max_per_minute=10):
+    min_interval = 60.0 / max_per_minute
+    
+    def decorator(func):
+        last_called = [0.0]
+        
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            elapsed = time() - last_called[0]
+            if elapsed < min_interval:
+                await asyncio.sleep(min_interval - elapsed)
+            result = await func(*args, **kwargs)
+            last_called[0] = time()
+            return result
+        return wrapper
+    return decorator
+
+@rate_limit(max_per_minute=5)
+async def analyze_command(self, update, context):
+    # Your code here
+```
+
+---
+
+## 9. Monitoring & Logs
+
+### View Logs
+
+**Heroku:**
+```bash
+heroku logs --tail
+```
+
+**PythonAnywhere:**
+Check error log in Files tab
+
+**AWS EC2:**
+```bash
+sudo journalctl -u telegram-bot -f
+```
+
+### Add Custom Logging
+
+```python
+import logging
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    filename='bot.log'
+)
+```
+
+---
+
+## 10. Scaling for Production
+
+### Database Integration
+
+For user tracking and analytics:
+
+```python
+import sqlite3
+
+def track_user_request(user_id, symbol):
+    conn = sqlite3.connect('bot_usage.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO requests (user_id, symbol, timestamp)
+        VALUES (?, ?, datetime('now'))
+    ''', (user_id, symbol))
+    conn.commit()
+    conn.close()
+```
+
+### Queue System
+
+For high traffic:
+
+```python
+from celery import Celery
+
+app = Celery('tasks', broker='redis://localhost:6379')
+
+@app.task
+def analyze_stock(symbol):
+    # Analysis code here
+    return result
+```
+
+### Multiple Workers
+
+Deploy multiple instances behind load balancer for high availability.
+
+---
+
+## 11. Cost Estimates
+
+### Free Tiers:
+- **PythonAnywhere**: Limited, good for testing
+- **Heroku**: 550 hours/month free
+- **Railway**: $5 free credit/month
+- **Render**: 750 hours/month free
+
+### Paid Plans:
+- **Heroku Hobby**: $7/month
+- **AWS EC2 t2.micro**: ~$10/month
+- **Railway**: Pay as you go
+- **Render**: $7/month
+
+### Recommendation:
+- **Testing**: Local or PythonAnywhere
+- **Production (Low Traffic)**: Heroku or Render
+- **Production (High Traffic)**: AWS EC2 or Railway
+
+---
+
+## 12. Support & Resources
+
+### Documentation:
+- Telegram Bot API: https://core.telegram.org/bots/api
+- python-telegram-bot: https://python-telegram-bot.org
+- yfinance: https://github.com/ranaroussi/yfinance
+
+### Community:
+- python-telegram-bot GitHub: https://github.com/python-telegram-bot/python-telegram-bot
+
+---
+
+## 🎉 You're Ready!
+
+Your Telegram bot is now set up and ready to analyze Indian equity markets!
+
+**Next Steps:**
+1. Deploy to cloud for 24/7 availability
+2. Share bot with friends/traders
+3. Monitor usage and optimize
+4. Add custom features as needed
+
+**Happy Trading! 📈**
