@@ -829,10 +829,10 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
         horizontal_spacing=0.12
     )
     
-    # Historical prices (last 120 days)
+    # Historical prices (last 60 days)
     # PANEL 1: Main Price Forecast (Row 1, Col 1)
     
-    historical_data = analyzer.data.tail(120)
+    historical_data = analyzer.data.tail(60)
     forecast_dates = forecast['dates']
     
     # Add historical prices
@@ -932,7 +932,6 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
     )
     
     # PANEL 2: Fractal Parameters Table (Row 1, Col 2)
-    # PANEL 2: Fractal Parameters Table (Row 1, Col 2)
     # ============================================================================
     
     table_data = [
@@ -993,22 +992,38 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
         row=2, col=1
     )
     
-    # FD zones
-    fig.add_hrect(
+    # FD zones using add_shape (add_hrect doesn't work with table subplots)
+    fig.add_shape(
+        type="rect",
+        xref="x2", yref="y2",
+        x0=historical_data.index[-hist_len],
+        x1=historical_data.index[-1],
         y0=1.0, y1=1.3,
         fillcolor="rgba(0, 200, 0, 0.1)",
         line_width=0,
         row=2, col=1
     )
     
-    fig.add_hrect(
+    fig.add_shape(
+        type="rect",
+        xref="x2", yref="y2",
+        x0=historical_data.index[-hist_len],
+        x1=historical_data.index[-1],
         y0=1.7, y1=2.0,
         fillcolor="rgba(200, 0, 0, 0.1)",
         line_width=0,
         row=2, col=1
     )
     
-    fig.add_hline(y=1.5, line_dash="dash", line_color="black", line_width=1, row=2, col=1)
+    fig.add_shape(
+        type="line",
+        xref="x2", yref="y2",
+        x0=historical_data.index[-hist_len],
+        x1=historical_data.index[-1],
+        y0=1.5, y1=1.5,
+        line=dict(dash="dash", color="black", width=1),
+        row=2, col=1
+    )
     
     # ============================================================================
     # PANEL 4: Volatility Scaling (Row 2, Col 2)
@@ -1038,7 +1053,7 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
             y=fractal_vol,
             mode='lines',
             name=f'Fractal (σ∝t^{forecast["hurst_exponent"]:.2f})',
-            line=dict(color='red', width=2.5),
+            line=dict(color='red', width=2),
             showlegend=False
         ),
         row=2, col=2
@@ -1057,7 +1072,7 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
             y=hurst_hist,
             mode='lines',
             name='Hurst Exponent',
-            line=dict(color='#E74C3C', width=2),
+            line=dict(color='#E74C3C', width=1.5),
             fill='tozeroy',
             fillcolor='rgba(231, 76, 60, 0.2)',
             showlegend=False
@@ -1066,21 +1081,37 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
     )
     
     # H zones
-    fig.add_hrect(
+    fig.add_shape(
+        type="rect",
+        xref="x4", yref="y4",
+        x0=historical_data.index[-hist_len],
+        x1=historical_data.index[-1],
         y0=0.55, y1=1.0,
         fillcolor="rgba(0, 200, 0, 0.1)",
         line_width=0,
         row=3, col=1
     )
     
-    fig.add_hrect(
+    fig.add_shape(
+        type="rect",
+        xref="x4", yref="y4",
+        x0=historical_data.index[-hist_len],
+        x1=historical_data.index[-1],
         y0=0.0, y1=0.45,
         fillcolor="rgba(200, 0, 0, 0.1)",
         line_width=0,
         row=3, col=1
     )
     
-    fig.add_hline(y=0.5, line_dash="dash", line_color="black", line_width=1, row=3, col=1)
+    fig.add_shape(
+        type="line",
+        xref="x4", yref="y4",
+        x0=historical_data.index[-hist_len],
+        x1=historical_data.index[-1],
+        y0=0.5, y1=0.5,
+        line=dict(dash="dash", color="black", width=1),
+        row=3, col=1
+    )
     
     # ============================================================================
     # PANEL 6: Self-Similar Patterns (Row 3, Col 2)
@@ -1107,7 +1138,14 @@ def create_fractal_forecast_chart(analyzer, forecast_days: int = 30):
             row=3, col=2
         )
         
-        fig.add_vline(x=0.7, line_dash="dash", line_color="red", line_width=1, row=3, col=2)
+        fig.add_shape(
+            type="line",
+            xref="x5", yref="y5",
+            x0=0.7, x1=0.7,
+            y0=0, y1=len(pattern_scales_found),
+            line=dict(dash="dash", color="red", width=1),
+            row=3, col=2
+        )
     
     # ============================================================================
     # Update Layout
