@@ -121,7 +121,7 @@ class IndianEquityAnalyzer:
         
         # RSI
         df['RSI'] = RSIIndicator(df['Close']).rsi()
-        df['RSI_MA20'] = RSIIndicator(df['Close'], rolling(window=20)).mean()
+        
         
         # Bollinger Bands
         bb = BollingerBands(df['Close'])
@@ -708,7 +708,6 @@ def create_candlestick_chart(analyzer, patterns=None):
     
     # RSI 
     fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple', width=2)), row=3, col=1)
-    fig.add_trace(go.Scatter(x=df.index, y=df['RSI_MA20'], name='RSI20', line=dict(color='black', width=1.5)), row=3, col=1)
     fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
     
