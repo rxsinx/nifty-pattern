@@ -12,8 +12,7 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import OnBalanceVolumeIndicator
 import warnings
 from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
-#from quantitative_analysis import FractalAnalysis, StatisticalEstimation, VolatilityModelling, run_full_quantitative_analysis
-
+from markov_analysis import HiddenMarkovAnalysis, run_hmm_analysis
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -112,7 +111,7 @@ class IndianEquityAnalyzer:
         df['SMA_200'] = SMAIndicator(df['Close'], window=200).sma_indicator()
         df['EMA_10'] = EMAIndicator(df['Close'], window=10).ema_indicator()
         df['EMA_20'] = EMAIndicator(df['Close'], window=20).ema_indicator()
-        df['EMA_70'] = EMAIndicator(df['Close'], window=20).ema_indicator()
+        df['EMA_70'] = EMAIndicator(df['Close'], window=70).ema_indicator()
         
         # MACD
         macd = MACD(df['Close'])
@@ -122,7 +121,7 @@ class IndianEquityAnalyzer:
         
         # RSI
         df['RSI'] = RSIIndicator(df['Close']).rsi()
-        #df['RSI_MA14'] = RSIIndicator(df['Close'], window=14).rsi()
+        df['RSI_MA20'] = RSIIndicator(df['Close'], rolling(window=20).mean()
         
         # Bollinger Bands
         bb = BollingerBands(df['Close'])
@@ -709,7 +708,7 @@ def create_candlestick_chart(analyzer, patterns=None):
     
     # RSI 
     fig.add_trace(go.Scatter(x=df.index, y=df['RSI'], name='RSI', line=dict(color='purple', width=2)), row=3, col=1)
-    #fig.add_trace(go.Scatter(x=df.index, y=df['RSI_MA14'], name='RSI14', line=dict(color='black', width=2)), row=3, col=1)
+    fig.add_trace(go.Scatter(x=df.index, y=df['RSI_MA20'], name='RSI20', line=dict(color='black', width=1.5)), row=3, col=1)
     fig.add_hline(y=70, line_dash="dash", line_color="red", row=3, col=1)
     fig.add_hline(y=30, line_dash="dash", line_color="green", row=3, col=1)
     
@@ -1366,7 +1365,7 @@ def main():
                 # Charts
                 st.markdown('<div class="sub-header">📊 Technical Analysis Charts</div>', unsafe_allow_html=True)
                 
-                chart_tab1, chart_tab2 = st.tabs(["Price Action & Indicators", "Volume Profile"])
+                chart_tab1, chart_tab2, chart_tab3 = st.tabs(["Price Action & Indicators", "Volume Profile", "HMM Price Forecast"])
                 
                 with chart_tab1:
                     # Create chart with or without patterns based on user preference
@@ -1391,10 +1390,251 @@ def main():
                         st.metric("Value Area High", f"₹{vp['value_area_high']:.2f}")
                     with col3:
                         st.metric("Value Area Low", f"₹{vp['value_area_low']:.2f}")
-                
-                                    
+                with chart_tab3:
+                    st.markdown("### 🎲 Hidden Markov Model (HMM) Price Forecast")
                     
-                
+                    # Run HMM analysis
+                    with st.spinner('Running Hidden Markov Model analysis...'):
+                        hmm_results = run_hmm_analysis(analyzer.data, forecast_days=30)
+                    
+                    forecast = hmm_results['forecast']
+                    characteristics = hmm_results['characteristics']
+                    strategy = hmm_results['strategy']
+                    persistence = hmm_results['persistence']
+                    
+                    # Main Forecast Display
+                    st.markdown("#### 📊 30-Day Price Forecast")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Current Price", f"₹{forecast['current_price']:.2f}")
+                        st.metric("Target Price", f"₹{forecast['target_price']:.2f}", 
+                                 f"{forecast['expected_return']:.2f}%")
+                    
+                    with col2:
+                        st.metric("Best Case", f"₹{forecast['best_case']:.2f}",
+                                 f"+{((forecast['best_case'] - forecast['current_price']) / forecast['current_price'] * 100):.2f}%")
+                        st.metric("Worst Case", f"₹{forecast['worst_case']:.2f}",
+                                 f"{((forecast['worst_case'] - forecast['current_price']) / forecast['current_price'] * 100):.2f}%")
+                    
+                    with col3:
+                        st.metric("Signal", strategy['signal'])
+                        st.metric("Direction", forecast['direction'])
+                    
+                    with col4:
+                        st.metric("Confidence", forecast['confidence_level'])
+                        st.metric("Expected Volatility", f"{forecast['expected_volatility']:.2f}%")
+                    
+                    # Market Regime Analysis
+                    st.markdown("---")
+                    st.markdown("#### 🔄 Market Regime Analysis")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("**Current State**")
+                        current_state = forecast['current_state']
+                        prob = forecast['current_state_probability']
+                        
+                        if current_state == 'BULL':
+                            st.success(f"🟢 {current_state} ({prob:.1%})")
+                        elif current_state == 'BEAR':
+                            st.error(f"🔴 {current_state} ({prob:.1%})")
+                        else:
+                            st.info(f"🟡 {current_state} ({prob:.1%})")
+                        
+                        st.markdown(f"**Avg Duration:** {persistence[current_state]['avg_duration']:.0f} days")
+                    
+                    with col2:
+                        st.markdown("**Dominant Future Regime**")
+                        dominant = forecast['dominant_regime']
+                        dom_conf = forecast['regime_confidence']
+                        
+                        if dominant == 'BULL':
+                            st.success(f"🟢 {dominant} ({dom_conf:.1%})")
+                        elif dominant == 'BEAR':
+                            st.error(f"🔴 {dominant} ({dom_conf:.1%})")
+                        else:
+                            st.info(f"🟡 {dominant} ({dom_conf:.1%})")
+                        
+                        st.markdown("**Regime Probabilities:**")
+                        st.markdown(f"- Bull: {forecast['bull_probability']:.1%}")
+                        st.markdown(f"- Bear: {forecast['bear_probability']:.1%}")
+                        st.markdown(f"- Sideways: {forecast['sideways_probability']:.1%}")
+                    
+                    with col3:
+                        st.markdown("**State Transition Matrix**")
+                        trans_matrix = forecast['state_transition_matrix']
+                        
+                        # Create small table
+                        trans_df = pd.DataFrame(
+                            trans_matrix,
+                            columns=['→Bull', '→Bear', '→Side'],
+                            index=['Bull→', 'Bear→', 'Side→']
+                        )
+                        st.dataframe(trans_df.style.format("{:.1%}"), use_container_width=True)
+                    
+                    # Regime Characteristics
+                    st.markdown("---")
+                    st.markdown("#### 📈 Historical Regime Characteristics")
+                    
+                    # Create comparison table
+                    char_data = []
+                    for regime in ['BULL', 'BEAR', 'SIDEWAYS']:
+                        char = characteristics[regime]
+                        char_data.append({
+                            'Regime': regime,
+                            'Avg Return': f"{char['avg_return']:.2f}%",
+                            'Volatility': f"{char['volatility']:.2f}%",
+                            'Win Rate': f"{char['win_rate']:.0f}%",
+                            'Sharpe': f"{char['sharpe_ratio']:.2f}",
+                            'Duration': f"{char['duration_pct']:.0f}%"
+                        })
+                    
+                    char_df = pd.DataFrame(char_data)
+                    st.dataframe(char_df, use_container_width=True, hide_index=True)
+                    
+                    # Trading Strategy
+                    st.markdown("---")
+                    st.markdown("#### 🎯 HMM-Based Trading Strategy")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("**Strategy Details:**")
+                        st.markdown(f"- **Signal:** {strategy['signal']}")
+                        st.markdown(f"- **Entry Price:** ₹{strategy['entry_price']:.2f}")
+                        st.markdown(f"- **Target Price:** ₹{strategy['target_price']:.2f}")
+                        if strategy['stop_loss']:
+                            st.markdown(f"- **Stop Loss:** ₹{strategy['stop_loss']:.2f}")
+                        st.markdown(f"- **Position Size:** {strategy['position_size']}")
+                        st.markdown(f"- **Time Horizon:** {strategy['time_horizon']}")
+                    
+                    with col2:
+                        st.markdown("**Rationale:**")
+                        for reason in strategy['rationale']:
+                            st.markdown(f"✅ {reason}")
+                        
+                        if strategy['risks']:
+                            st.markdown("**Risks:**")
+                            for risk in strategy['risks']:
+                                st.warning(f"⚠️ {risk}")
+                    
+                    # Forecast interpretation
+                    st.markdown("---")
+                    if forecast['direction'] == 'BULLISH':
+                        st.success(f"📈 **BULLISH SIGNAL**: Expected to reach ₹{forecast['target_price']:.2f} in 30 days ({forecast['expected_return']:.2f}% gain)")
+                    elif forecast['direction'] == 'BEARISH':
+                        st.error(f"📉 **BEARISH SIGNAL**: Expected to decline to ₹{forecast['target_price']:.2f} in 30 days ({forecast['expected_return']:.2f}% loss)")
+                    else:
+                        st.info(f"📊 **NEUTRAL SIGNAL**: Range-bound between ₹{forecast['worst_case']:.2f} - ₹{forecast['best_case']:.2f}")
+                    
+                    # HMM Explanation
+                    with st.expander("ℹ️ Understanding Hidden Markov Model (HMM) Analysis"):
+                        st.markdown(f"""
+                        **Hidden Markov Model Price Forecasting:**
+                        
+                        HMM is a statistical model that assumes the market operates in hidden "regimes" that can't be directly observed, 
+                        but can be inferred from price movements.
+                        
+                        ### **Core Concepts:**
+                        
+                        **1. Hidden States (Market Regimes)**
+                        - **BULL**: Uptrending market with positive average returns
+                        - **BEAR**: Downtrending market with negative average returns  
+                        - **SIDEWAYS**: Range-bound market with neutral returns
+                        
+                        **2. Transition Probabilities**
+                        - Probability of moving from one regime to another
+                        - Example: From BULL to BULL (persistence), BULL to BEAR (reversal)
+                        - Estimated from historical data patterns
+                        
+                        **3. Emission Probabilities**
+                        - Distribution of returns within each regime
+                        - Each regime has characteristic mean and volatility
+                        - Bull regime: Higher mean, moderate vol
+                        - Bear regime: Negative mean, high vol
+                        - Sideways regime: Near-zero mean, low vol
+                        
+                        ### **Algorithms Used:**
+                        
+                        **Viterbi Algorithm**: Finds most likely sequence of hidden states given observed prices
+                        
+                        **Forward-Backward**: Calculates probability of being in each state at each time
+                        
+                        **Baum-Welch (EM)**: Estimates HMM parameters from data
+                        
+                        **Monte Carlo**: Simulates {forecast['n_simulations']} future price paths based on regime transitions
+                        
+                        ### **Current Analysis:**
+                        
+                        - **Current Regime**: {forecast['current_state']} (confidence: {forecast['current_state_probability']:.1%})
+                        - **Expected Regime**: {forecast['dominant_regime']} (probability: {forecast['regime_confidence']:.1%})
+                        - **Persistence**: {persistence[forecast['current_state']]['avg_duration']:.0f} days average
+                        - **Method**: {forecast['method']}
+                        
+                        ### **Key Differences from Other Methods:**
+                        
+                        **vs Random Walk:**
+                        - HMM: Different regimes with different behaviors
+                        - Random Walk: Single state, constant parameters
+                        
+                        **vs Fractal Analysis:**
+                        - HMM: Discrete regimes with clear transitions
+                        - Fractal: Continuous memory effects
+                        
+                        **vs Technical Analysis:**
+                        - HMM: Statistical regime inference
+                        - Technical: Pattern recognition
+                        
+                        ### **Trading Implications:**
+                        
+                        **Bull Regime Characteristics:**
+                        - Average Return: {characteristics['BULL']['avg_return']:.2f}%/day
+                        - Win Rate: {characteristics['BULL']['win_rate']:.0f}%
+                        - Avg Duration: {persistence['BULL']['avg_duration']:.0f} days
+                        
+                        **Bear Regime Characteristics:**
+                        - Average Return: {characteristics['BEAR']['avg_return']:.2f}%/day
+                        - Win Rate: {characteristics['BEAR']['win_rate']:.0f}%
+                        - Avg Duration: {persistence['BEAR']['avg_duration']:.0f} days
+                        
+                        **Sideways Regime Characteristics:**
+                        - Average Return: {characteristics['SIDEWAYS']['avg_return']:.2f}%/day
+                        - Win Rate: {characteristics['SIDEWAYS']['win_rate']:.0f}%
+                        - Avg Duration: {persistence['SIDEWAYS']['avg_duration']:.0f} days
+                        
+                        ### **Risk Management:**
+                        
+                        - Position size based on regime confidence
+                        - Stop loss adjusted for regime volatility
+                        - Time horizon matches expected regime persistence
+                        - Monitor for regime change signals
+                        
+                        ### **Confidence Assessment:**
+                        
+                        Confidence Level: **{forecast['confidence_level']}** ({forecast['confidence_score']:.1%})
+                        
+                        Factors:
+                        """)
+                        
+                        for factor in forecast['confidence_factors']:
+                            st.markdown(f"- {factor}")
+                        
+                        st.markdown("""
+                        ### **Academic Foundation:**
+                        
+                        - Baum & Petrie (1966): Hidden Markov Models
+                        - Viterbi (1967): Optimal state estimation algorithm
+                        - Rabiner (1989): Tutorial on HMMs
+                        - Ang & Bekaert (2002): Regime switching in financial markets
+                        - Hamilton (1989): Markov-switching models in economics
+                        
+                        **Note**: This is a probabilistic forecast. Markets can deviate from predicted regimes due to 
+                        unexpected events, news, or market structure changes.
+                        """)
+                                    
                 # Key Metrics Table
                 st.markdown('<div class="sub-header">📋 Key Technical Indicators</div>', unsafe_allow_html=True)
                 
