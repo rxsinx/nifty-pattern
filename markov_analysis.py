@@ -234,17 +234,33 @@ class HiddenMarkovAnalysis:
         
         return gamma
     
-    def _emission_probability(self, observation: float, state: int) -> float:
+    def _emission_probability(self, observation, state):
         """
         Calculate emission probability for observation given state.
         
         Args:
-            observation: Observed return
-            state: Hidden state index
+            observation: Observed return (float or array)
+            state: Hidden state index (int or array)
             
         Returns:
-            Emission probability
+            Emission probability (float or array)
         """
+        # Handle array of states
+        if isinstance(state, np.ndarray):
+            probs = np.zeros(len(state))
+            for i, s in enumerate(state):
+                params = self.emission_params[int(s)]
+                mean = params['mean']
+                std = params['std']
+                
+                if std == 0:
+                    std = 1e-6
+                
+                probs[i] = stats.norm.pdf(observation, loc=mean, scale=std)
+            
+            return probs
+        
+        # Handle single state
         params = self.emission_params[state]
         mean = params['mean']
         std = params['std']
