@@ -666,7 +666,7 @@ def create_candlestick_chart(analyzer, patterns=None):
     fig = make_subplots(
         rows=4, cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.03,
+        vertical_spacing=0.05,
         row_heights=[0.5, 0.15, 0.15, 0.2],
         subplot_titles=('Price Action with Indicators & Patterns', 'MACD', 'RSI', 'Volume Profile')
     )
