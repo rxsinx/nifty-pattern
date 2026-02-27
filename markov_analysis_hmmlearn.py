@@ -99,32 +99,51 @@ class EnhancedHiddenMarkovAnalysis:
         
         # Feature 2: Volume changes
         if include_volume and 'Volume' in self.data.columns:
-            volume = self.data['Volume'].values
-            volume_changes = np.diff(np.log(volume + 1))  # +1 to avoid log(0)
-            
-            # Align length with returns
-            if len(volume_changes) == len(self.returns):
-                features.append(volume_changes)
+            try:
+                volume = self.data['Volume'].values
+                volume_changes = np.diff(np.log(volume + 1))  # +1 to avoid log(0)
+                
+                # Align length with returns
+                if len(volume_changes) == len(self.returns):
+                    features.append(volume_changes)
+            except Exception as e:
+                # Skip volume if error
+                pass
         
         # Feature 3: Realized volatility (rolling std)
         if include_volatility:
-            window = 5  # 5-day rolling volatility
-            volatility = pd.Series(self.returns).rolling(window=window).std().values
-            volatility = volatility[window-1:]  # Remove NaN
-            
-            # Align with returns
-            if len(volatility) < len(self.returns):
-                # Pad with median
-                pad_length = len(self.returns) - len(volatility)
-                volatility = np.concatenate([np.full(pad_length, np.nanmedian(volatility)), volatility])
-            
-            features.append(volatility)
+            try:
+                window = 5  # 5-day rolling volatility
+                volatility = pd.Series(self.returns).rolling(window=window).std().values
+                volatility = volatility[window-1:]  # Remove NaN
+                
+                # Align with returns
+                if len(volatility) < len(self.returns):
+                    # Pad with median
+                    pad_length = len(self.returns) - len(volatility)
+                    med_vol = np.nanmedian(volatility)
+                    if np.isnan(med_vol):
+                        med_vol = 0.01
+                    volatility = np.concatenate([np.full(pad_length, med_vol), volatility])
+                
+                features.append(volatility)
+            except Exception as e:
+                # Skip volatility if error
+                pass
         
         # Stack features
-        X = np.column_stack(features)
+        if len(features) == 1:
+            X = features[0].reshape(-1, 1)
+        else:
+            X = np.column_stack(features)
         
-        # Remove any NaN rows
-        X = X[~np.isnan(X).any(axis=1)]
+        # Remove any NaN or Inf rows
+        valid_mask = ~np.isnan(X).any(axis=1) & ~np.isinf(X).any(axis=1)
+        X = X[valid_mask]
+        
+        # Ensure we have enough data
+        if len(X) < 50:
+            raise ValueError(f"Insufficient valid data: only {len(X)} samples after cleaning")
         
         return X
     
@@ -438,24 +457,35 @@ class EnhancedHiddenMarkovAnalysis:
                 forecast_states[sim, day] = state
                 
                 # Sample return from current state's distribution
-                mean = self.model.means_[state, 0]  # First feature is return
-                
-                if self.covariance_type == 'diag':
-                    var = self.model.covars_[state, 0]
-                elif self.covariance_type == 'full':
-                    var = self.model.covars_[state, 0, 0]
-                elif self.covariance_type == 'spherical':
-                    var = self.model.covars_[state]
-                else:  # tied
-                    var = self.model.covars_[0, 0]
-                
-                # Generate return (unscale from standardized space)
-                std_return = np.random.normal(mean, np.sqrt(var))
-                actual_return = std_return * self.scaler.scale_[0] + self.scaler.mean_[0]
-                
-                # Update price
-                price = price * np.exp(actual_return)
-                forecast_prices[sim, day] = price
+                try:
+                    mean = self.model.means_[state, 0]  # First feature is return
+                    
+                    if self.covariance_type == 'diag':
+                        var = self.model.covars_[state, 0]
+                    elif self.covariance_type == 'full':
+                        var = self.model.covars_[state, 0, 0]
+                    elif self.covariance_type == 'spherical':
+                        var = self.model.covars_[state]
+                    else:  # tied
+                        var = self.model.covars_[0, 0]
+                    
+                    # Generate return (unscale from standardized space)
+                    std_return = np.random.normal(mean, np.sqrt(max(var, 1e-6)))
+                    
+                    # Safe unscaling
+                    if hasattr(self.scaler, 'scale_') and len(self.scaler.scale_) > 0:
+                        actual_return = std_return * self.scaler.scale_[0] + self.scaler.mean_[0]
+                    else:
+                        actual_return = std_return * 0.01  # Fallback: assume 1% std
+                    
+                    # Update price with bounds check
+                    price = price * np.exp(np.clip(actual_return, -0.2, 0.2))  # Clip to ±20%
+                    forecast_prices[sim, day] = price
+                    
+                except Exception as e:
+                    # Fallback: use simple random walk
+                    price = price * np.exp(np.random.normal(0, 0.01))
+                    forecast_prices[sim, day] = price
                 
                 # Transition to next state
                 state = np.random.choice(self.n_states, p=self.model.transmat_[state])
@@ -758,7 +788,7 @@ class EnhancedHiddenMarkovAnalysis:
 def run_enhanced_hmm_analysis(data: pd.DataFrame, forecast_days: int = 30,
                               auto_select: bool = False) -> Dict:
     """
-    Run complete enhanced HMM analysis.
+    Run complete enhanced HMM analysis with fallback to original.
     
     Args:
         data: DataFrame with OHLCV data
@@ -768,51 +798,82 @@ def run_enhanced_hmm_analysis(data: pd.DataFrame, forecast_days: int = 30,
     Returns:
         Complete analysis results
     """
-    hmm_analyzer = EnhancedHiddenMarkovAnalysis(data)
-    
-    # Auto-select best model if requested
-    if auto_select:
-        print("🔍 Selecting best model...")
-        selection = hmm_analyzer.select_best_model(max_states=4, 
-                                                    covariance_types=['diag', 'full'])
+    try:
+        hmm_analyzer = EnhancedHiddenMarkovAnalysis(data)
         
-        if 'best_model' in selection:
-            best = selection['best_model']
-            print(f"✅ Best: {best['n_states']} states, {best['covariance_type']} covariance (BIC: {best['bic']:.2f})")
+        # Auto-select best model if requested
+        if auto_select:
+            print("🔍 Selecting best model...")
+            selection = hmm_analyzer.select_best_model(max_states=4, 
+                                                        covariance_types=['diag', 'full'])
             
-            # Re-initialize with best params
-            hmm_analyzer = EnhancedHiddenMarkovAnalysis(
-                data,
-                n_states=best['n_states'],
-                covariance_type=best['covariance_type']
-            )
-    
-    # Fit model
-    fit_results = hmm_analyzer.fit_model(verbose=True)
-    
-    if not fit_results.get('converged'):
-        print("⚠️  Model did not converge, results may be unreliable")
-    
-    # Generate forecast
-    forecast = hmm_analyzer.forecast_price(forecast_days=forecast_days)
-    
-    # Analyze regimes
-    characteristics = hmm_analyzer.analyze_regime_characteristics()
-    
-    # Generate strategy
-    strategy = hmm_analyzer.generate_trading_strategy(forecast)
-    
-    # Persistence
-    persistence = hmm_analyzer._calculate_regime_persistence()
-    
-    return {
-        'hmm_parameters': fit_results,
-        'forecast': forecast,
-        'characteristics': characteristics,
-        'strategy': strategy,
-        'persistence': persistence,
-        'model_selection': selection if auto_select else None
-    }
+            if 'best_model' in selection:
+                best = selection['best_model']
+                print(f"✅ Best: {best['n_states']} states, {best['covariance_type']} covariance (BIC: {best['bic']:.2f})")
+                
+                # Re-initialize with best params
+                hmm_analyzer = EnhancedHiddenMarkovAnalysis(
+                    data,
+                    n_states=best['n_states'],
+                    covariance_type=best['covariance_type']
+                )
+        
+        # Fit model
+        fit_results = hmm_analyzer.fit_model(verbose=False)
+        
+        if not fit_results.get('converged'):
+            print("⚠️  Model did not converge, trying with more iterations...")
+            fit_results = hmm_analyzer.fit_model(n_iter=200, tol=1e-3, verbose=False)
+        
+        # Generate forecast
+        forecast = hmm_analyzer.forecast_price(forecast_days=forecast_days)
+        
+        # Analyze regimes
+        characteristics = hmm_analyzer.analyze_regime_characteristics()
+        
+        # Generate strategy
+        strategy = hmm_analyzer.generate_trading_strategy(forecast)
+        
+        # Persistence
+        persistence = hmm_analyzer._calculate_regime_persistence()
+        
+        return {
+            'hmm_parameters': fit_results,
+            'forecast': forecast,
+            'characteristics': characteristics,
+            'strategy': strategy,
+            'persistence': persistence,
+            'model_selection': selection if auto_select else None,
+            'method': 'enhanced'
+        }
+        
+    except Exception as e:
+        print(f"⚠️  Enhanced HMM failed: {e}")
+        print("🔄 Falling back to original HMM implementation...")
+        
+        # Fallback to original implementation
+        try:
+            from markov_analysis import run_hmm_analysis as run_original
+            results = run_original(data, forecast_days=forecast_days)
+            results['method'] = 'original_fallback'
+            results['fallback_reason'] = str(e)
+            return results
+        except Exception as e2:
+            print(f"❌ Original HMM also failed: {e2}")
+            # Return minimal error response
+            return {
+                'error': True,
+                'error_message': f"Both HMM implementations failed. Enhanced: {str(e)}, Original: {str(e2)}",
+                'method': 'failed',
+                'forecast': {
+                    'signal': 'HOLD',
+                    'direction': 'NEUTRAL',
+                    'confidence_level': 'LOW',
+                    'current_price': float(data['Close'].iloc[-1]),
+                    'target_price': float(data['Close'].iloc[-1]),
+                    'expected_return': 0.0
+                }
+            }
 
 
 if __name__ == "__main__":
