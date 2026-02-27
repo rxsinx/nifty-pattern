@@ -12,7 +12,7 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import OnBalanceVolumeIndicator
 import warnings
 from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
-from markov_analysis import HiddenMarkovAnalysis, run_hmm_analysis
+from markov_analysis_hmmlearn import (EnhancedHiddenMarkovAnalysis as HiddenMarkovAnalysis, run_enhanced_hmm_analysis as run_hmm_analysis)
 warnings.filterwarnings('ignore')
 
 # Page configuration
