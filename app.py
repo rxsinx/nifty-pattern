@@ -14,6 +14,7 @@ from sklearn.cluster import KMeans
 import warnings
 from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
 from markov_analysis import HiddenMarkovAnalysis, run_hmm_analysis
+from mcmc_analysis import run_mcmc_analysis
 warnings.filterwarnings('ignore')
 
 # Page configuration
@@ -687,6 +688,248 @@ def create_volume_profile_chart(analyzer):
 
 
 # ============================================================================
+# MCMC VISUALISATION HELPERS
+# ============================================================================
+
+def create_mcmc_fan_chart(forecast_summary: Dict, symbol: str) -> go.Figure:
+    """
+    Build the MCMC price fan chart with nested credible-interval bands
+    plus a sample of individual Monte Carlo paths.
+    """
+    dates   = forecast_summary['forecast_dates']
+    fan     = forecast_summary['fan_bands']
+    paths   = forecast_summary['sample_paths']   # (≤200, horizon)
+    cp      = forecast_summary['current_price']
+
+    # Prepend today's price so the fan starts from now
+    import datetime
+    today = dates[0] - datetime.timedelta(days=1)
+    all_dates = [today] + list(dates)
+
+    def prepend(band_list):
+        return [cp] + list(band_list)
+
+    fig = go.Figure()
+
+    # ── 60 individual sample paths (light, thin) ──────────────────────────
+    n_show = min(60, paths.shape[0])
+    for i in range(n_show):
+        path_y = prepend(paths[i])
+        fig.add_trace(go.Scatter(
+            x=all_dates, y=path_y,
+            mode='lines',
+            line=dict(color='rgba(150,180,255,0.07)', width=1),
+            showlegend=False, hoverinfo='skip'))
+
+    # ── 95 % credible band ────────────────────────────────────────────────
+    p2_5  = prepend(fan['2.5'])
+    p97_5 = prepend(fan['97.5'])
+    fig.add_trace(go.Scatter(
+        x=all_dates + all_dates[::-1],
+        y=p97_5 + p2_5[::-1],
+        fill='toself',
+        fillcolor='rgba(100,149,237,0.12)',
+        line=dict(color='rgba(0,0,0,0)'),
+        name='95% Credible Interval',
+        hoverinfo='skip'))
+
+    # ── 80 % credible band ────────────────────────────────────────────────
+    p10   = prepend(fan['10'])
+    p90   = prepend(fan['90'])
+    fig.add_trace(go.Scatter(
+        x=all_dates + all_dates[::-1],
+        y=p90 + p10[::-1],
+        fill='toself',
+        fillcolor='rgba(100,149,237,0.22)',
+        line=dict(color='rgba(0,0,0,0)'),
+        name='80% Credible Interval',
+        hoverinfo='skip'))
+
+    # ── 50 % credible band ────────────────────────────────────────────────
+    p25 = prepend(fan['25'])
+    p75 = prepend(fan['75'])
+    fig.add_trace(go.Scatter(
+        x=all_dates + all_dates[::-1],
+        y=p75 + p25[::-1],
+        fill='toself',
+        fillcolor='rgba(100,149,237,0.35)',
+        line=dict(color='rgba(0,0,0,0)'),
+        name='50% Credible Interval',
+        hoverinfo='skip'))
+
+    # ── Median path ───────────────────────────────────────────────────────
+    p50 = prepend(fan['50'])
+    fig.add_trace(go.Scatter(
+        x=all_dates, y=p50,
+        mode='lines',
+        line=dict(color='#00e5ff', width=3),
+        name='Median Forecast'))
+
+    # ── Current price anchor ──────────────────────────────────────────────
+    fig.add_hline(y=cp, line_dash='dot', line_color='#ffd600', line_width=1,
+                  annotation_text=f'Current ₹{cp:.2f}',
+                  annotation_position='left')
+
+    # ── Target price ─────────────────────────────────────────────────────
+    tp = forecast_summary['target_price']
+    fig.add_hline(y=tp, line_dash='dash', line_color='#69ff47', line_width=1.5,
+                  annotation_text=f'Median Target ₹{tp:.2f}',
+                  annotation_position='right')
+
+    direction_colour = '#69ff47' if forecast_summary['direction'] == 'BULLISH' \
+                       else '#ff1744' if forecast_summary['direction'] == 'BEARISH' \
+                       else '#ffd600'
+
+    fig.update_layout(
+        title=f'⛓️ MCMC Bayesian Price Forecast — {symbol} '
+              f'({forecast_summary["forecast_days"]}-Day)',
+        xaxis_title='Date',
+        yaxis_title='Price (₹)',
+        height=550,
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117',
+        font=dict(color='#fafafa'),
+        hovermode='x unified',
+        legend=dict(orientation='h', yanchor='bottom', y=1.01,
+                    xanchor='right', x=1),
+    )
+    fig.update_xaxes(showgrid=False, color='#555')
+    fig.update_yaxes(showgrid=True, gridcolor='#1e1e2e', color='#999')
+    return fig
+
+
+def create_posterior_distribution_charts(mcmc_result: Dict, posterior: Dict) -> go.Figure:
+    """
+    2-panel chart: posterior histogram of μ and σ with
+    KDE overlay, MLE reference line, and 95% credible interval shading.
+    """
+    from plotly.subplots import make_subplots
+
+    mu_samp    = mcmc_result['mu_samples']
+    sig_samp   = mcmc_result['sigma_samples']
+    mle_mu     = posterior['mle_mu_daily']
+    mle_sig    = posterior['mle_sigma_daily']
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=(
+            'Posterior P(μ | data)  — Daily Drift',
+            'Posterior P(σ | data)  — Daily Volatility'
+        )
+    )
+
+    # ── μ panel ───────────────────────────────────────────────────────────
+    fig.add_trace(go.Histogram(
+        x=mu_samp,
+        nbinsx=80,
+        histnorm='probability density',
+        marker_color='rgba(100,149,237,0.55)',
+        name='μ posterior',
+        showlegend=True), row=1, col=1)
+
+    # 95% CI shading via vertical lines
+    mu_lo = posterior['mu_ci_95_lo']
+    mu_hi = posterior['mu_ci_95_hi']
+    mu_m  = posterior['mu_mean']
+    fig.add_vline(x=mu_m,   line_color='#00e5ff', line_width=2,
+                  annotation_text='Mean', row=1, col=1)
+    fig.add_vline(x=mle_mu, line_color='#ffd600', line_width=1.5,
+                  line_dash='dot', annotation_text='MLE', row=1, col=1)
+    fig.add_vline(x=mu_lo,  line_color='rgba(150,150,150,0.6)',
+                  line_width=1, line_dash='dash', row=1, col=1)
+    fig.add_vline(x=mu_hi,  line_color='rgba(150,150,150,0.6)',
+                  line_width=1, line_dash='dash',
+                  annotation_text='95% CI', row=1, col=1)
+
+    # ── σ panel ───────────────────────────────────────────────────────────
+    fig.add_trace(go.Histogram(
+        x=sig_samp,
+        nbinsx=80,
+        histnorm='probability density',
+        marker_color='rgba(255,100,100,0.55)',
+        name='σ posterior',
+        showlegend=True), row=1, col=2)
+
+    sig_lo = posterior['sigma_ci_95_lo']
+    sig_hi = posterior['sigma_ci_95_hi']
+    sig_m  = posterior['sigma_mean']
+    fig.add_vline(x=sig_m,   line_color='#ff6d00', line_width=2,
+                  annotation_text='Mean', row=1, col=2)
+    fig.add_vline(x=mle_sig, line_color='#ffd600', line_width=1.5,
+                  line_dash='dot', annotation_text='MLE', row=1, col=2)
+    fig.add_vline(x=sig_lo,  line_color='rgba(150,150,150,0.6)',
+                  line_width=1, line_dash='dash', row=1, col=2)
+    fig.add_vline(x=sig_hi,  line_color='rgba(150,150,150,0.6)',
+                  line_width=1, line_dash='dash',
+                  annotation_text='95% CI', row=1, col=2)
+
+    fig.update_layout(
+        title='MCMC Posterior Distributions — Parameter Uncertainty',
+        height=380,
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117',
+        font=dict(color='#fafafa'),
+        showlegend=True,
+    )
+    fig.update_xaxes(showgrid=False, color='#555')
+    fig.update_yaxes(showgrid=True, gridcolor='#1e1e2e', color='#999',
+                     title_text='Density')
+    fig.update_xaxes(title_text='μ (daily drift)', row=1, col=1)
+    fig.update_xaxes(title_text='σ (daily volatility)', row=1, col=2)
+    return fig
+
+
+def create_trace_plots(mcmc_result: Dict) -> go.Figure:
+    """
+    Trace plots for all chains — visual convergence check.
+    Good chains look like 'fuzzy caterpillars'.
+    """
+    mu_chains  = mcmc_result['mu_chains']     # (n_chains, n_samples)
+    sig_chains = mcmc_result['sigma_chains']
+    n_chains   = mu_chains.shape[0]
+
+    fig = make_subplots(rows=2, cols=1,
+                         subplot_titles=('Trace: μ (daily drift)',
+                                          'Trace: σ (daily volatility)'),
+                         vertical_spacing=0.12)
+
+    chain_colours = ['#00e5ff', '#69ff47', '#ff6d00', '#d500f9',
+                     '#ffd600', '#ff1744']
+
+    for c in range(n_chains):
+        colour = chain_colours[c % len(chain_colours)]
+        x_idx  = list(range(len(mu_chains[c])))
+
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=mu_chains[c],
+            mode='lines',
+            line=dict(color=colour, width=0.8),
+            name=f'Chain {c+1} μ',
+            legendgroup=f'chain{c}',
+            showlegend=True), row=1, col=1)
+
+        fig.add_trace(go.Scatter(
+            x=x_idx, y=sig_chains[c],
+            mode='lines',
+            line=dict(color=colour, width=0.8),
+            name=f'Chain {c+1} σ',
+            legendgroup=f'chain{c}',
+            showlegend=False), row=2, col=1)
+
+    fig.update_layout(
+        title='MCMC Trace Plots — Chain Mixing & Stationarity',
+        height=450,
+        plot_bgcolor='#0e1117',
+        paper_bgcolor='#0e1117',
+        font=dict(color='#fafafa'),
+        hovermode='x unified',
+    )
+    fig.update_xaxes(showgrid=False, color='#555', title_text='Iteration')
+    fig.update_yaxes(showgrid=True, gridcolor='#1e1e2e', color='#999')
+    return fig
+
+
+# ============================================================================
 # MAIN APPLICATION
 # ============================================================================
 
@@ -718,6 +961,13 @@ def main():
         st.markdown("---")
         st.markdown("### 📚 Pattern Detection")
         st.markdown("""
+**Dan Zanger (6):**
+- ✅ Cup and Handle
+- ✅ High Tight Flag
+- ✅ Ascending Triangle
+- ✅ Flat Base
+- ✅ Falling Wedge
+- ✅ Double Bottom
 
 **Classic (8):**
 - ✅ Head & Shoulders 🔻
@@ -728,6 +978,13 @@ def main():
 - ✅ Bear Flag 🔻
 - ✅ Rising Wedge 🔻
 - ✅ Pennant (Bull/Bear)
+
+**Qullamaggie (5):**
+- ✅ Episodic Pivot
+- ✅ Breakout
+- ✅ Parabolic Short 🔻
+- ✅ Gap and Go
+- ✅ ABCD Pattern
 
 **Advanced (11):**
 - ✅ VCP 🔥 (Minervini)
@@ -742,10 +999,22 @@ def main():
 - ✅ Elliott Wave 🌊
 - ✅ Mean Reversion 📉📈
 
+**TOTAL: 30 Patterns**
         """)
 
         st.markdown("---")
-        
+        st.markdown("### 🎓 Trading Philosophy")
+        st.markdown("""
+**Dan Zanger's Rules:**
+- Volume is everything
+- Focus on liquid leaders
+- 8% absolute sell rule
+
+**Qullamaggie's Rules:**
+- Extreme discipline
+- Market leaders only
+- Never risk >1% per trade
+        """)
 
         analyze_btn = st.button("🔍 Analyze Stock", type="primary", use_container_width=True)
 
@@ -928,11 +1197,12 @@ def main():
                 # ── Charts ─────────────────────────────────────────────────
                 st.markdown('<div class="sub-header">📊 Technical Analysis Charts</div>', unsafe_allow_html=True)
 
-                chart_tab1, chart_tab2, chart_tab3, chart_tab4 = st.tabs([
+                chart_tab1, chart_tab2, chart_tab3, chart_tab4, chart_tab5 = st.tabs([
                     "Price Action & Indicators",
                     "Volume Profile",
                     "🤖 AI Adaptive Supertrend",
-                    "HMM Price Forecast"
+                    "⛓️ MCMC Bayesian Forecast",
+                    "HMM Price Forecast",
                 ])
 
                 with chart_tab1:
@@ -1070,6 +1340,273 @@ All indicators are probability tools, not guarantees. Always use proper position
                         st.error("AI Supertrend could not be computed. Try a longer data period (1y or more).")
 
                 with chart_tab4:
+                    # ── MCMC BAYESIAN FORECAST ──────────────────────────────
+                    st.markdown("### ⛓️ Markov Chain Monte Carlo (MCMC) Bayesian Price Forecast")
+
+                    # Sidebar-style MCMC controls inside the tab
+                    mc1, mc2, mc3 = st.columns(3)
+                    with mc1:
+                        mcmc_days    = st.slider("Forecast Days", 10, 60, 30, 5,
+                                                  key='mcmc_days')
+                    with mc2:
+                        mcmc_chains  = st.slider("MCMC Chains", 2, 4, 4, 1,
+                                                  key='mcmc_chains',
+                                                  help="More chains = better convergence check")
+                    with mc3:
+                        mcmc_samples = st.slider("Samples / Chain", 1000, 5000, 3000, 500,
+                                                  key='mcmc_samples',
+                                                  help="More samples = smoother posterior")
+
+                    with st.spinner('⛓️ Running MCMC sampler — drawing from posterior P(μ,σ | data)...'):
+                        try:
+                            mcmc_out = run_mcmc_analysis(
+                                data          = analyzer.data,
+                                forecast_days = mcmc_days,
+                                n_samples     = mcmc_samples,
+                                n_warmup      = max(500, mcmc_samples // 2),
+                                n_chains      = mcmc_chains,
+                                n_paths       = 2000,
+                                seed          = 42,
+                            )
+                            mcmc_ok = True
+                        except Exception as e:
+                            st.error(f"MCMC error: {e}")
+                            mcmc_ok = False
+
+                    if mcmc_ok:
+                        fs   = mcmc_out['forecast_summary']
+                        post = mcmc_out['posterior']
+                        risk = mcmc_out['risk_metrics']
+                        diag = mcmc_out['diagnostics']
+                        mr   = mcmc_out['mcmc_result']
+
+                        # ── Convergence banner ──────────────────────────────
+                        if diag['converged']:
+                            st.success(
+                                f"✅ MCMC Converged — "
+                                f"R-hat μ={diag['r_hat_mu']:.4f}, "
+                                f"R-hat σ={diag['r_hat_sigma']:.4f} "
+                                f"(both < 1.05) | "
+                                f"ESS μ={diag['ess_mu']:.0f}, "
+                                f"ESS σ={diag['ess_sigma']:.0f} | "
+                                f"Accept rate={diag['accept_rate']:.1%}"
+                            )
+                        else:
+                            st.warning(
+                                f"⚠️ Convergence uncertain — "
+                                f"R-hat μ={diag['r_hat_mu']:.4f}, "
+                                f"R-hat σ={diag['r_hat_sigma']:.4f}. "
+                                f"Try more samples or chains."
+                            )
+
+                        # ── Direction signal ────────────────────────────────
+                        direction_col = st.columns(1)[0]
+                        if fs['direction'] == 'BULLISH':
+                            st.success(
+                                f"📈 **BULLISH** — Posterior median target "
+                                f"₹{fs['target_price']:.2f} "
+                                f"({fs['expected_return']:+.2f}% in {mcmc_days} days) | "
+                                f"Prob(profit) = {risk['prob_profit']:.1%}")
+                        elif fs['direction'] == 'BEARISH':
+                            st.error(
+                                f"📉 **BEARISH** — Posterior median target "
+                                f"₹{fs['target_price']:.2f} "
+                                f"({fs['expected_return']:+.2f}% in {mcmc_days} days) | "
+                                f"Prob(loss >5%) = {risk['prob_loss_5pct']:.1%}")
+                        else:
+                            st.info(
+                                f"📊 **NEUTRAL** — Range-bound. "
+                                f"95% CI: ₹{fs['ci_95_low']:.2f} – ₹{fs['ci_95_high']:.2f} | "
+                                f"Prob(profit) = {risk['prob_profit']:.1%}")
+
+                        # ── Key metrics row ─────────────────────────────────
+                        km1, km2, km3, km4, km5, km6 = st.columns(6)
+                        with km1:
+                            st.metric("Current Price",  f"₹{fs['current_price']:.2f}")
+                        with km2:
+                            st.metric("Median Target",  f"₹{fs['target_price']:.2f}",
+                                      delta=f"{fs['expected_return']:+.2f}%")
+                        with km3:
+                            st.metric("95% CI Low",     f"₹{fs['ci_95_low']:.2f}")
+                        with km4:
+                            st.metric("95% CI High",    f"₹{fs['ci_95_high']:.2f}")
+                        with km5:
+                            st.metric("Ann. Drift",
+                                      f"{fs['ann_drift_mean']:+.1f}%",
+                                      delta=f"95% CI: {fs['ann_drift_lo']:+.1f}% to {fs['ann_drift_hi']:+.1f}%")
+                        with km6:
+                            st.metric("Ann. Volatility", f"{fs['ann_volatility']:.1f}%")
+
+                        # ── Fan chart ───────────────────────────────────────
+                        st.plotly_chart(
+                            create_mcmc_fan_chart(fs, symbol),
+                            use_container_width=True)
+
+                        # ── Posterior distributions ─────────────────────────
+                        st.markdown("#### 📊 Posterior Parameter Distributions")
+                        st.plotly_chart(
+                            create_posterior_distribution_charts(mr, post),
+                            use_container_width=True)
+
+                        # ── Posterior table ─────────────────────────────────
+                        st.markdown("#### 🔢 Posterior Summary Table")
+                        post_tbl = pd.DataFrame([
+                            {
+                                'Parameter': 'μ  (daily drift)',
+                                'Posterior Mean':   f"{post['mu_mean']*100:+.4f}%",
+                                'Posterior Median': f"{post['mu_median']*100:+.4f}%",
+                                'Std Dev':          f"{post['mu_std']*100:.4f}%",
+                                '90% CI':           f"[{post['mu_ci_90_lo']*100:+.4f}%, "
+                                                    f"{post['mu_ci_90_hi']*100:+.4f}%]",
+                                'MLE (point est.)': f"{post['mle_mu_daily']*100:+.4f}%",
+                            },
+                            {
+                                'Parameter': 'σ  (daily volatility)',
+                                'Posterior Mean':   f"{post['sigma_mean']*100:.4f}%",
+                                'Posterior Median': f"{post['sigma_median']*100:.4f}%",
+                                'Std Dev':          f"{post['sigma_std']*100:.4f}%",
+                                '90% CI':           f"[{post['sigma_ci_90_lo']*100:.4f}%, "
+                                                    f"{post['sigma_ci_90_hi']*100:.4f}%]",
+                                'MLE (point est.)': f"{post['mle_sigma_daily']*100:.4f}%",
+                            },
+                        ])
+                        st.dataframe(post_tbl, use_container_width=True, hide_index=True)
+
+                        # ── Risk metrics ────────────────────────────────────
+                        st.markdown("#### ⚠️ Bayesian Risk Metrics")
+                        rk1, rk2, rk3, rk4 = st.columns(4)
+                        with rk1:
+                            st.metric("Prob(Profit)",       f"{risk['prob_profit']:.1%}")
+                            st.metric("Prob(Gain > 5%)",    f"{risk['prob_gain_5pct']:.1%}")
+                        with rk2:
+                            st.metric("Prob(Gain > 10%)",   f"{risk['prob_gain_10pct']:.1%}")
+                            st.metric("Prob(Loss > 5%)",    f"{risk['prob_loss_5pct']:.1%}")
+                        with rk3:
+                            var_key  = 'var_95'
+                            cvar_key = 'cvar_95'
+                            st.metric("95% VaR",
+                                      f"{risk.get(var_key, 0)*100:+.2f}%",
+                                      help="Worst-case return at 95th percentile of loss")
+                            st.metric("95% CVaR (ES)",
+                                      f"{risk.get(cvar_key, 0)*100:+.2f}%",
+                                      help="Expected shortfall beyond VaR")
+                        with rk4:
+                            st.metric("50% CI Range",
+                                      f"₹{fs['ci_50_low']:.0f}–₹{fs['ci_50_high']:.0f}")
+                            st.metric("80% CI Range",
+                                      f"₹{fs['ci_80_low']:.0f}–₹{fs['ci_80_high']:.0f}")
+
+                        # ── Trace plots ─────────────────────────────────────
+                        st.markdown("#### 🔍 MCMC Trace Plots (Convergence Check)")
+                        st.plotly_chart(
+                            create_trace_plots(mr),
+                            use_container_width=True)
+                        st.caption(
+                            "✅ Good mixing = chains look like overlapping 'fuzzy caterpillars'. "
+                            "If chains separate or trend, increase n_warmup or n_samples.")
+
+                        # ── MCMC explainer ──────────────────────────────────
+                        with st.expander("ℹ️ Understanding MCMC Bayesian Forecasting"):
+                            st.markdown(f"""
+### ⛓️ Markov Chain Monte Carlo (MCMC) — Bayesian Price Forecasting
+
+MCMC is the **gold standard** for Bayesian inference. Instead of fitting a single
+"best-fit" parameter estimate, MCMC samples the **full posterior probability
+distribution** over parameters, giving you:
+
+> **"Given everything the stock has done historically, what is the complete
+> range of plausible drift rates and volatilities — and how likely is each?"**
+
+---
+
+### 🏗️ The Model Architecture
+
+**Return model** — Geometric Brownian Motion (GBM):
+```
+log(P_t / P_t-1) ~ Normal(μ - 0.5σ², σ²)
+```
+- μ = instantaneous expected daily return (drift)
+- σ = daily volatility (randomness)
+
+**Priors** (what we assume before seeing data):
+```
+μ ~ Normal(0, 0.10)      — symmetric, centred on zero drift
+σ ~ Half-Normal(0, 0.03) — positive only, most vol < 8%/day
+```
+
+**Posterior** (updated after seeing {diag['n_obs']} trading days):
+```
+P(μ, σ | data) ∝ P(data | μ, σ) × P(μ) × P(σ)
+                    likelihood          prior
+```
+
+---
+
+### ⚙️ The Metropolis-Hastings Sampler
+
+The sampler explores the parameter space like a **smart random walk**:
+
+1. Start at an initial guess (μ₀, σ₀)
+2. **Propose** a nearby point (μ*, σ*) using a Gaussian step
+3. **Accept** the proposal with probability:
+   `min(1, P(μ*, σ*|data) / P(μ, σ|data))`
+4. If rejected, stay at current point
+5. Repeat {mcmc_samples} × {mcmc_chains} times across {mcmc_chains} chains
+
+The **warmup phase** ({max(500, mcmc_samples // 2)} steps) tunes step sizes
+toward the target acceptance rate of 23.4% (optimal for 2-D targets).
+
+---
+
+### 🔬 Convergence Diagnostics
+
+| Metric | Value | Threshold | Status |
+|--------|-------|-----------|--------|
+| R-hat μ | {diag['r_hat_mu']:.4f} | < 1.05 | {"✅" if diag['r_hat_mu'] < 1.05 else "⚠️"} |
+| R-hat σ | {diag['r_hat_sigma']:.4f} | < 1.05 | {"✅" if diag['r_hat_sigma'] < 1.05 else "⚠️"} |
+| ESS μ | {diag['ess_mu']:.0f} | > 400 | {"✅" if diag['ess_mu'] > 400 else "⚠️"} |
+| ESS σ | {diag['ess_sigma']:.0f} | > 400 | {"✅" if diag['ess_sigma'] > 400 else "⚠️"} |
+| Accept rate | {diag['accept_rate']:.1%} | 20–40% | {"✅" if 0.15 < diag['accept_rate'] < 0.50 else "⚠️"} |
+
+**R-hat (Gelman-Rubin):** Ratio of between-chain to within-chain variance.
+Values near 1.0 confirm all chains converged to the same distribution.
+
+**ESS (Effective Sample Size):** Accounts for autocorrelation. ESS = 400
+from {diag['n_total_samples']} draws → effective independence of samples.
+
+---
+
+### 📊 Fan Chart Interpretation
+
+| Band | Meaning |
+|------|---------|
+| 🔵 Dark core (50% CI) | Half of all simulated outcomes fall here |
+| 🔵 Middle band (80% CI) | 80% of outcomes — "likely" range |
+| 🔵 Outer band (95% CI) | 95% of outcomes — "very likely" range |
+| Thin blue lines | 60 individual MC paths drawn from posterior |
+| Cyan line | Median (50th percentile) forecast path |
+
+---
+
+### ✅ MCMC vs Other Methods
+
+| Feature | Plain MC | HMM | **MCMC Bayesian** |
+|---------|----------|-----|----------------|
+| Parameter uncertainty | ❌ Point est. | ❌ | ✅ Full posterior |
+| Convergence check | ❌ | ❌ | ✅ R-hat + ESS |
+| Credible intervals | ❌ | Approx | ✅ Exact Bayesian |
+| Incorporates prior knowledge | ❌ | ❌ | ✅ |
+| Regime detection | ❌ | ✅ | ❌ (see HMM tab) |
+| Computational cost | Low | Low | Medium |
+
+**Bottom line:** MCMC gives the most statistically rigorous forecast.
+The fan chart's width is **data-driven** — it widens when historical data
+is noisy and tightens when the drift is persistent.
+
+⚠️ *Past data cannot guarantee future returns. Use for education only.*
+                            """)
+
+                with chart_tab5:
                     st.markdown("### 🎲 Hidden Markov Model (HMM) Price Forecast")
                     with st.spinner('Running Hidden Markov Model analysis...'):
                         hmm_results   = run_hmm_analysis(analyzer.data, forecast_days=30)
@@ -1162,15 +1699,6 @@ All indicators are probability tools, not guarantees. Always use proper position
 4. **Patience Pays** — Wait 7-8 weeks for cup formation
 5. **Upper Half Entry** — Handle must be in upper half of cup
 6. **Pure Technicals** — Price & volume tell the story
-
-Dan Zanger (6):
-
-1. ✅ Cup and Handle
-2. ✅ High Tight Flag
-3. ✅ Ascending Triangle
-4. ✅ Flat Base
-5. ✅ Falling Wedge
-6. ✅ Double Bottom
                     """)
                 with c2:
                     st.markdown("""
@@ -1182,13 +1710,6 @@ Dan Zanger (6):
 5. **VDU = Gold** — Volume Dry Up shows selling exhaustion
 6. **Momentum Trading** — Follow institutional money flow
 7. **3-5 Day Hold** — Quick profits, trail winners with 10/20 SMA
-
-Qullamaggie (5):
-1. ✅ Episodic Pivot
-2. ✅ Breakout
-3. ✅ Parabolic Short 🔻
-4. ✅ Gap and Go
-5. ✅ ABCD Pattern
                     """)
 
                 st.success(f"✅ Analysis completed for {symbol}")
