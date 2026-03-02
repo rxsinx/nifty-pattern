@@ -12,6 +12,7 @@ from ta.volatility import BollingerBands, AverageTrueRange
 from ta.volume import OnBalanceVolumeIndicator
 from sklearn.cluster import KMeans
 import warnings
+from typing import Dict, List, Tuple, Optional
 from pattern_detector import PatternDetector, format_pattern_summary, get_pattern_statistics
 from markov_analysis import HiddenMarkovAnalysis, run_hmm_analysis
 from mcmc_analysis import run_mcmc_analysis
