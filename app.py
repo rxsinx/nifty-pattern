@@ -742,7 +742,6 @@ def main():
 - ✅ Elliott Wave 🌊
 - ✅ Mean Reversion 📉📈
 
-**TOTAL: 30 Patterns**
         """)
 
         st.markdown("---")
@@ -1166,12 +1165,12 @@ All indicators are probability tools, not guarantees. Always use proper position
 
 Dan Zanger (6):
 
-✅ Cup and Handle
-✅ High Tight Flag
-✅ Ascending Triangle
-✅ Flat Base
-✅ Falling Wedge
-✅ Double Bottom
+1. ✅ Cup and Handle
+2. ✅ High Tight Flag
+3. ✅ Ascending Triangle
+4. ✅ Flat Base
+5. ✅ Falling Wedge
+6. ✅ Double Bottom
                     """)
                 with c2:
                     st.markdown("""
@@ -1185,11 +1184,11 @@ Dan Zanger (6):
 7. **3-5 Day Hold** — Quick profits, trail winners with 10/20 SMA
 
 Qullamaggie (5):
-- ✅ Episodic Pivot
-- ✅ Breakout
-- ✅ Parabolic Short 🔻
-- ✅ Gap and Go
-- ✅ ABCD Pattern
+1. ✅ Episodic Pivot
+2. ✅ Breakout
+3. ✅ Parabolic Short 🔻
+4. ✅ Gap and Go
+5. ✅ ABCD Pattern
                     """)
 
                 st.success(f"✅ Analysis completed for {symbol}")
