@@ -718,13 +718,6 @@ def main():
         st.markdown("---")
         st.markdown("### 📚 Pattern Detection")
         st.markdown("""
-**Dan Zanger (6):**
-- ✅ Cup and Handle
-- ✅ High Tight Flag
-- ✅ Ascending Triangle
-- ✅ Flat Base
-- ✅ Falling Wedge
-- ✅ Double Bottom
 
 **Classic (8):**
 - ✅ Head & Shoulders 🔻
@@ -735,13 +728,6 @@ def main():
 - ✅ Bear Flag 🔻
 - ✅ Rising Wedge 🔻
 - ✅ Pennant (Bull/Bear)
-
-**Qullamaggie (5):**
-- ✅ Episodic Pivot
-- ✅ Breakout
-- ✅ Parabolic Short 🔻
-- ✅ Gap and Go
-- ✅ ABCD Pattern
 
 **Advanced (11):**
 - ✅ VCP 🔥 (Minervini)
@@ -760,18 +746,7 @@ def main():
         """)
 
         st.markdown("---")
-        st.markdown("### 🎓 Trading Philosophy")
-        st.markdown("""
-**Dan Zanger's Rules:**
-- Volume is everything
-- Focus on liquid leaders
-- 8% absolute sell rule
-
-**Qullamaggie's Rules:**
-- Extreme discipline
-- Market leaders only
-- Never risk >1% per trade
-        """)
+        
 
         analyze_btn = st.button("🔍 Analyze Stock", type="primary", use_container_width=True)
 
@@ -1188,6 +1163,15 @@ All indicators are probability tools, not guarantees. Always use proper position
 4. **Patience Pays** — Wait 7-8 weeks for cup formation
 5. **Upper Half Entry** — Handle must be in upper half of cup
 6. **Pure Technicals** — Price & volume tell the story
+
+Dan Zanger (6):
+
+✅ Cup and Handle
+✅ High Tight Flag
+✅ Ascending Triangle
+✅ Flat Base
+✅ Falling Wedge
+✅ Double Bottom
                     """)
                 with c2:
                     st.markdown("""
@@ -1199,6 +1183,13 @@ All indicators are probability tools, not guarantees. Always use proper position
 5. **VDU = Gold** — Volume Dry Up shows selling exhaustion
 6. **Momentum Trading** — Follow institutional money flow
 7. **3-5 Day Hold** — Quick profits, trail winners with 10/20 SMA
+
+Qullamaggie (5):
+- ✅ Episodic Pivot
+- ✅ Breakout
+- ✅ Parabolic Short 🔻
+- ✅ Gap and Go
+- ✅ ABCD Pattern
                     """)
 
                 st.success(f"✅ Analysis completed for {symbol}")
